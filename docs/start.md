@@ -105,8 +105,10 @@ To verify your installation is working:
 **GPU support not detected:**
 - Ensure NVIDIA drivers are installed
 - Install nvidia-docker: `sudo apt-get install nvidia-docker2` (Ubuntu)
-- Restart Docker daemon after installation
+- Ensure that you have the NVIDIA Container Toolkit ([Visit here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html))
 
+- Restart Docker daemon after installation
+## 
 ## Next Steps
 
 Once installed, proceed with your preferred setup method:
