@@ -7,9 +7,11 @@ To Install MCPDocker on Claude, you have to install the Claude Desktop App at ht
 {
   "mcpServers": {
     "SERVER_NAME": {
-      "command": "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
-      "args": ["/Users/richardwang/Documents/GitHub/MCPDocker/main.py"],
-      "cwd": "/Users/richardwang/Documents/GitHub/MCPDocker/"
+      "command": "YOUR_PYTHON_INSTALLATION",
+      "args": ["LOCATION_OF_MAINPY"],
+      "cwd": "FOLDERLOCATION_OF_MAINPY"
     }
   }
-}```
+}
+```
+- If you have set it up correctly, it should show within the Sliders button, it should show your SERVER name.  (Reload Claude).
