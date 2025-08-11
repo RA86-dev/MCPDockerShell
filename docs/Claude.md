@@ -1,0 +1,15 @@
+# Claude
+
+To Install MCPDocker on Claude, you have to install the Claude Desktop App at https://claude.ai/download. Then, open the settings by opening the Panel and then opening your account. 
+- Click on Developer within Desktop Settings. It should not have anything within it.
+- Click Edit Config. It should open the claude_desktop_settings.json file. Then, edit and fill out the form using the following template:
+```
+{
+  "mcpServers": {
+    "SERVER_NAME": {
+      "command": "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
+      "args": ["/Users/richardwang/Documents/GitHub/MCPDocker/main.py"],
+      "cwd": "/Users/richardwang/Documents/GitHub/MCPDocker/"
+    }
+  }
+}```

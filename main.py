@@ -4,6 +4,7 @@ import asyncio
 import docker
 import os
 import tempfile
+import argparse
 import shutil
 import subprocess
 import json
@@ -12,11 +13,7 @@ from typing import List, Dict, Optional
 from mcp.server import FastMCP
 from mcp.types import Resource, Tool
 from pydantic import BaseModel
-import fastapi_subsidiary_service as fss
 import uvicorn
-def run_fastapi():
-    uvicorn.run(fss.app)
-
 
 class ContainerConfig(BaseModel):
     image: str
@@ -422,21 +419,22 @@ class MCPDockerServer:
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
-    def run(self):
+    def run(self,transport_method: str="stdio"):
         """Run the MCP server"""
-        return self.mcp.run(transport='stdio')
+        return self.mcp.run(transport=transport_method)
 
 
 def main():
-    try:
-        if sys.argv[1] == "--server-ui":
-            # Start FastAPI service in background thread
-            fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
-            fastapi_thread.start()
-    except Exception:
-        pass
+    parser = argparse.ArgumentParser(
+        prog='MCPDockerShell',
+        description="A service that lets AI use Docker and shell",
+        epilog="To learn more, visit the Repository at github.com/RA86-dev/MCPDockerShell . "   
+    )
+    parser.add_argument("-t","--transport")
+    arguments = parser.parse_args()
+
     
-    print("🌐 FastAPI web interface starting at http://localhost:8000")
+    print("🌐 FastAPI web interface starting at http://localhost:8080")
     print("🐳 MCP Docker server starting...")
     
     # Start MCP server (this will block)
@@ -445,8 +443,9 @@ def main():
         print("🚀 NVIDIA GPU support detected and enabled")
     else:
         print("💻 Running in CPU-only mode")
-    server.run()
-
-
+    if arguments.transport and arguments.server_ui == False:
+        server.run(transport_method=arguments.transport)
+    else:
+        server.run(transport_method="stdio")
 if __name__ == "__main__":
     main()
