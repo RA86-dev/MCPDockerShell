@@ -1,0 +1,43 @@
+{
+  "name": "mcpdocker",
+  "version": "0.1.0",
+  "description": "MCP server that provides Docker container management capabilities for AI assistants",
+  "main": "main.py",
+  "bin": {
+    "mcpdocker": "./bin/mcpdocker"
+  },
+  "scripts": {
+    "start": "python main.py",
+    "install-deps": "pip install -r requirements.txt"
+  },
+  "keywords": [
+    "mcp",
+    "docker",
+    "container",
+    "ai",
+    "assistant",
+    "shell"
+  ],
+  "author": "RA86-dev",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RA86-dev/MCPDockerShell.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RA86-dev/MCPDockerShell/issues"
+  },
+  "homepage": "https://github.com/RA86-dev/MCPDockerShell#readme",
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "dependencies": {
+    "python-shell": "^5.0.0"
+  }
+}
