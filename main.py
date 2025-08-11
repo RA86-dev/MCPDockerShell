@@ -8,6 +8,8 @@ import argparse
 import shutil
 import subprocess
 import json
+import tarfile
+import io
 from pathlib import Path
 from typing import List, Dict, Optional
 from mcp.server import FastMCP
@@ -406,6 +408,244 @@ class MCPDockerServer:
                 return f"Image '{image}' not allowed. Use list_allowed_images to see available options."
             
             return self._run_docker_scout_command(["policy", image, "--policy", policy])
+        
+        @self.mcp.tool()
+        async def copy_file_to_container(container_id: str, local_path: str, container_path: str) -> str:
+            """Copy a file from local filesystem or workspace to a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                # Check if the local path is absolute or relative to workspace
+                if os.path.isabs(local_path):
+                    source_path = Path(local_path)
+                else:
+                    source_path = Path(self.temp_dir) / local_path
+                
+                if not source_path.exists():
+                    return f"Source file {local_path} not found"
+                
+                # Create a tar archive containing the file
+                tar_stream = io.BytesIO()
+                with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                    tar.add(source_path, arcname=os.path.basename(container_path))
+                tar_stream.seek(0)
+                
+                # Extract to the container
+                container_dir = os.path.dirname(container_path) or '/'
+                container.put_archive(container_dir, tar_stream.getvalue())
+                
+                return f"File copied from {local_path} to {container_path} in container {container_id[:12]}"
+                
+            except Exception as e:
+                return f"Error copying file to container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def copy_file_from_container(container_id: str, container_path: str, local_path: str = None) -> str:
+            """Copy a file from container to local workspace"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                # Get the archive from the container
+                tar_stream, stat = container.get_archive(container_path)
+                
+                # If no local path specified, use the filename in workspace
+                if local_path is None:
+                    local_path = os.path.basename(container_path)
+                
+                # Determine the full local path
+                if os.path.isabs(local_path):
+                    dest_path = Path(local_path)
+                else:
+                    dest_path = Path(self.temp_dir) / local_path
+                
+                # Create parent directories if needed
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Extract the file from the tar stream
+                tar_data = b''.join(chunk for chunk in tar_stream)
+                with tarfile.open(fileobj=io.BytesIO(tar_data)) as tar:
+                    # Extract the first file in the archive
+                    members = tar.getmembers()
+                    if members:
+                        file_data = tar.extractfile(members[0])
+                        if file_data:
+                            with open(dest_path, 'wb') as f:
+                                f.write(file_data.read())
+                
+                return f"File copied from {container_path} in container {container_id[:12]} to {local_path}"
+                
+            except Exception as e:
+                return f"Error copying file from container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def create_file_in_container(container_id: str, file_path: str, content: str) -> str:
+            """Create a file with specified content inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                # Create a temporary file in workspace first
+                temp_file = Path(self.temp_dir) / f"temp_{os.path.basename(file_path)}"
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                # Copy to container
+                tar_stream = io.BytesIO()
+                with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                    tar.add(temp_file, arcname=os.path.basename(file_path))
+                tar_stream.seek(0)
+                
+                container_dir = os.path.dirname(file_path) or '/'
+                container.put_archive(container_dir, tar_stream.getvalue())
+                
+                # Clean up temp file
+                temp_file.unlink()
+                
+                return f"File {file_path} created in container {container_id[:12]}"
+                
+            except Exception as e:
+                return f"Error creating file in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def delete_file_in_container(container_id: str, file_path: str) -> str:
+            """Delete a file inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                result = container.exec_run(f"rm -f {file_path}")
+                
+                if result.exit_code == 0:
+                    return f"File {file_path} deleted from container {container_id[:12]}"
+                else:
+                    return f"Error deleting file: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error deleting file in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def list_files_in_container(container_id: str, directory_path: str = "/workspace") -> str:
+            """List files and directories in a container directory"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                result = container.exec_run(f"ls -la {directory_path}")
+                
+                if result.exit_code == 0:
+                    return f"Contents of {directory_path}:\n{result.output.decode('utf-8')}"
+                else:
+                    return f"Error listing directory: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error listing files in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def create_directory_in_container(container_id: str, directory_path: str) -> str:
+            """Create a directory inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                result = container.exec_run(f"mkdir -p {directory_path}")
+                
+                if result.exit_code == 0:
+                    return f"Directory {directory_path} created in container {container_id[:12]}"
+                else:
+                    return f"Error creating directory: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error creating directory in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def move_file_in_container(container_id: str, source_path: str, dest_path: str) -> str:
+            """Move or rename a file/directory inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                result = container.exec_run(f"mv {source_path} {dest_path}")
+                
+                if result.exit_code == 0:
+                    return f"Moved {source_path} to {dest_path} in container {container_id[:12]}"
+                else:
+                    return f"Error moving file: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error moving file in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def copy_file_in_container(container_id: str, source_path: str, dest_path: str) -> str:
+            """Copy a file/directory inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                result = container.exec_run(f"cp -r {source_path} {dest_path}")
+                
+                if result.exit_code == 0:
+                    return f"Copied {source_path} to {dest_path} in container {container_id[:12]}"
+                else:
+                    return f"Error copying file: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error copying file in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def read_file_in_container(container_id: str, file_path: str) -> str:
+            """Read the contents of a file inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                result = container.exec_run(f"cat {file_path}")
+                
+                if result.exit_code == 0:
+                    return result.output.decode('utf-8')
+                else:
+                    return f"Error reading file: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error reading file in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def write_file_in_container(container_id: str, file_path: str, content: str, append: bool = False) -> str:
+            """Write content to a file inside a container"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                # Escape content for shell
+                import shlex
+                escaped_content = shlex.quote(content)
+                
+                if append:
+                    command = f"echo {escaped_content} >> {file_path}"
+                else:
+                    command = f"echo {escaped_content} > {file_path}"
+                
+                result = container.exec_run(command)
+                
+                if result.exit_code == 0:
+                    action = "appended to" if append else "written to"
+                    return f"Content {action} {file_path} in container {container_id[:12]}"
+                else:
+                    return f"Error writing file: {result.output.decode('utf-8')}"
+                
+            except Exception as e:
+                return f"Error writing file in container: {str(e)}"
     
     async def cleanup(self):
         """Clean up containers and temporary files"""

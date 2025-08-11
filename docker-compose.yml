@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  mcpdocker:
+    build: .
+    container_name: mcpdocker
+    volumes:
+      # Mount Docker socket to give container access to host Docker daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount Docker binary (may vary by system)
+      - /usr/bin/docker:/usr/bin/docker:ro
+      # Optional: Mount workspace directory for file sharing
+      - ./workspace:/workspace
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Add docker group GID to match host (common GIDs: 999, 998, or check with `getent group docker`)
+    group_add:
+      - "999"  # Docker group GID - adjust if needed
+    restart: unless-stopped
+    
+  # Alternative service with privileged mode (less secure but simpler)
+  mcpdocker-privileged:
+    build: .
+    container_name: mcpdocker-privileged
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./workspace:/workspace
+    ports:
+      - "8081:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    profiles:
+      - privileged
