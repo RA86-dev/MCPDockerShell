@@ -6,10 +6,15 @@ import shutil
 import subprocess
 import tarfile
 import io
+import socket
+import threading
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Optional
 from mcp.server import FastMCP
 from mcp.types import Resource, Tool
+import json
+import time
 from pydantic import BaseModel
 import uvicorn
 
@@ -26,6 +31,7 @@ class MCPDockerServer:
         self.mcp = FastMCP("MCPDocker")
         self.docker_client = docker.from_env()
         self.active_containers = {}
+        self.active_streams = {}
         self.temp_dir = tempfile.mkdtemp(prefix="mcpdocker_")
         
         # Check for NVIDIA GPU support
@@ -642,9 +648,432 @@ class MCPDockerServer:
                 
             except Exception as e:
                 return f"Error writing file in container: {str(e)}"
+        
+        @self.mcp.tool()
+        async def start_port_stream(container_id: str, container_port: int, host_port: int = None) -> str:
+            """Start streaming data from a container port to a host port"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return f"Container {container_id} not found"
+                
+                if host_port is None:
+                    host_port = container_port
+                
+                # Check if port is already being streamed
+                stream_key = f"{container_id[:12]}:{container_port}"
+                if stream_key in self.active_streams:
+                    return f"Stream already active for container {container_id[:12]} port {container_port}"
+                
+                # Start the streaming server
+                stream_thread = threading.Thread(
+                    target=self._start_stream_server,
+                    args=(container, container_port, host_port, stream_key),
+                    daemon=True
+                )
+                stream_thread.start()
+                
+                self.active_streams[stream_key] = {
+                    'container_id': container_id,
+                    'container_port': container_port,
+                    'host_port': host_port,
+                    'thread': stream_thread
+                }
+                
+                return f"Started streaming from container {container_id[:12]} port {container_port} to host port {host_port}"
+                
+            except Exception as e:
+                return f"Error starting port stream: {str(e)}"
+        
+        @self.mcp.tool()
+        async def stop_port_stream(container_id: str, container_port: int) -> str:
+            """Stop streaming data from a container port"""
+            try:
+                stream_key = f"{container_id[:12]}:{container_port}"
+                
+                if stream_key not in self.active_streams:
+                    return f"No active stream found for container {container_id[:12]} port {container_port}"
+                
+                # Remove from active streams (the thread will detect this and stop)
+                stream_info = self.active_streams.pop(stream_key)
+                
+                return f"Stopped streaming from container {container_id[:12]} port {container_port}"
+                
+            except Exception as e:
+                return f"Error stopping port stream: {str(e)}"
+        
+        @self.mcp.tool()
+        async def list_active_streams() -> List[str]:
+            """List all active port streams"""
+            if not self.active_streams:
+                return ["No active streams"]
+            
+            streams = []
+            for stream_key, stream_info in self.active_streams.items():
+                container_id = stream_info['container_id'][:12]
+                container_port = stream_info['container_port']
+                host_port = stream_info['host_port']
+                streams.append(f"{container_id}:{container_port} -> localhost:{host_port}")
+            
+            return streams
+        
+        @self.mcp.tool()
+        async def stream_container_logs(container_id: str, follow: bool = True, tail: int = 100) -> str:
+            """Stream container logs in real-time with JSON responses"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return json.dumps({"error": f"Container {container_id} not found"})
+                
+                if not follow:
+                    # Return static logs
+                    logs = container.logs(tail=tail).decode('utf-8')
+                    return json.dumps({
+                        "type": "logs", 
+                        "container_id": container_id[:12],
+                        "data": logs,
+                        "streaming": False
+                    })
+                
+                # Start streaming logs
+                stream_key = f"logs_{container_id[:12]}_{int(time.time())}"
+                
+                def stream_logs():
+                    try:
+                        log_stream = container.logs(stream=True, follow=True, tail=tail)
+                        for log_line in log_stream:
+                            if stream_key not in self.active_streams:
+                                break
+                            
+                            log_data = {
+                                "type": "log_line",
+                                "container_id": container_id[:12],
+                                "timestamp": time.time(),
+                                "data": log_line.decode('utf-8').strip(),
+                                "stream_key": stream_key
+                            }
+                            
+                            # Store in stream buffer for retrieval
+                            if stream_key not in self.active_streams:
+                                self.active_streams[stream_key] = {"buffer": [], "type": "logs"}
+                            
+                            self.active_streams[stream_key]["buffer"].append(log_data)
+                            
+                            # Keep buffer size manageable
+                            if len(self.active_streams[stream_key]["buffer"]) > 1000:
+                                self.active_streams[stream_key]["buffer"] = self.active_streams[stream_key]["buffer"][-500:]
+                            
+                    except Exception as e:
+                        error_data = {
+                            "type": "error",
+                            "container_id": container_id[:12],
+                            "timestamp": time.time(),
+                            "error": str(e),
+                            "stream_key": stream_key
+                        }
+                        if stream_key in self.active_streams:
+                            self.active_streams[stream_key]["buffer"].append(error_data)
+                
+                # Start streaming thread
+                stream_thread = threading.Thread(target=stream_logs, daemon=True)
+                stream_thread.start()
+                
+                self.active_streams[stream_key] = {
+                    "buffer": [],
+                    "type": "logs",
+                    "container_id": container_id,
+                    "thread": stream_thread
+                }
+                
+                return json.dumps({
+                    "type": "stream_started",
+                    "container_id": container_id[:12],
+                    "stream_key": stream_key,
+                    "message": f"Started streaming logs for container {container_id[:12]}",
+                    "streaming": True
+                })
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error streaming logs: {str(e)}"})
+        
+        @self.mcp.tool()
+        async def get_stream_data(stream_key: str, last_index: int = 0) -> str:
+            """Get new data from an active stream since last_index"""
+            try:
+                if stream_key not in self.active_streams:
+                    return json.dumps({"error": f"Stream {stream_key} not found"})
+                
+                stream_data = self.active_streams[stream_key]
+                buffer = stream_data.get("buffer", [])
+                
+                # Get new data since last_index
+                new_data = buffer[last_index:]
+                
+                return json.dumps({
+                    "type": "stream_data",
+                    "stream_key": stream_key,
+                    "last_index": len(buffer),
+                    "data": new_data,
+                    "has_more": len(new_data) > 0
+                })
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error getting stream data: {str(e)}"})
+        
+        @self.mcp.tool()
+        async def stop_stream(stream_key: str) -> str:
+            """Stop an active MCP stream"""
+            try:
+                if stream_key not in self.active_streams:
+                    return json.dumps({"error": f"Stream {stream_key} not found"})
+                
+                stream_info = self.active_streams.pop(stream_key)
+                
+                return json.dumps({
+                    "type": "stream_stopped",
+                    "stream_key": stream_key,
+                    "message": f"Stream {stream_key} stopped successfully"
+                })
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error stopping stream: {str(e)}"})
+        
+        @self.mcp.tool()
+        async def stream_command_execution(container_id: str, command: str) -> str:
+            """Execute a command in container and stream the output in real-time"""
+            try:
+                container = self._find_container(container_id)
+                if not container:
+                    return json.dumps({"error": f"Container {container_id} not found"})
+                
+                stream_key = f"exec_{container_id[:12]}_{int(time.time())}"
+                
+                def execute_and_stream():
+                    try:
+                        # Execute command with streaming
+                        exec_instance = container.client.api.exec_create(
+                            container.id, command, stdout=True, stderr=True, stream=True
+                        )
+                        
+                        exec_stream = container.client.api.exec_start(
+                            exec_instance['Id'], stream=True
+                        )
+                        
+                        for chunk in exec_stream:
+                            if stream_key not in self.active_streams:
+                                break
+                                
+                            output_data = {
+                                "type": "command_output",
+                                "container_id": container_id[:12],
+                                "command": command,
+                                "timestamp": time.time(),
+                                "data": chunk.decode('utf-8'),
+                                "stream_key": stream_key
+                            }
+                            
+                            if stream_key not in self.active_streams:
+                                self.active_streams[stream_key] = {"buffer": [], "type": "command"}
+                            
+                            self.active_streams[stream_key]["buffer"].append(output_data)
+                            
+                            # Keep buffer manageable
+                            if len(self.active_streams[stream_key]["buffer"]) > 1000:
+                                self.active_streams[stream_key]["buffer"] = self.active_streams[stream_key]["buffer"][-500:]
+                        
+                        # Get exit code
+                        exec_info = container.client.api.exec_inspect(exec_instance['Id'])
+                        exit_code = exec_info.get('ExitCode', 0)
+                        
+                        completion_data = {
+                            "type": "command_completed",
+                            "container_id": container_id[:12],
+                            "command": command,
+                            "timestamp": time.time(),
+                            "exit_code": exit_code,
+                            "stream_key": stream_key
+                        }
+                        
+                        if stream_key in self.active_streams:
+                            self.active_streams[stream_key]["buffer"].append(completion_data)
+                            
+                    except Exception as e:
+                        error_data = {
+                            "type": "command_error",
+                            "container_id": container_id[:12],
+                            "command": command,
+                            "timestamp": time.time(),
+                            "error": str(e),
+                            "stream_key": stream_key
+                        }
+                        if stream_key in self.active_streams:
+                            self.active_streams[stream_key]["buffer"].append(error_data)
+                
+                # Start execution thread
+                exec_thread = threading.Thread(target=execute_and_stream, daemon=True)
+                exec_thread.start()
+                
+                self.active_streams[stream_key] = {
+                    "buffer": [],
+                    "type": "command",
+                    "container_id": container_id,
+                    "command": command,
+                    "thread": exec_thread
+                }
+                
+                return json.dumps({
+                    "type": "stream_started",
+                    "container_id": container_id[:12],
+                    "command": command,
+                    "stream_key": stream_key,
+                    "message": f"Started streaming command execution in container {container_id[:12]}",
+                    "streaming": True
+                })
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error streaming command execution: {str(e)}"})
+        
+        @self.mcp.tool()
+        async def list_active_mcp_streams() -> str:
+            """List all active MCP streams with their details"""
+            try:
+                if not self.active_streams:
+                    return json.dumps({"streams": [], "count": 0})
+                
+                streams = []
+                for stream_key, stream_info in self.active_streams.items():
+                    stream_detail = {
+                        "stream_key": stream_key,
+                        "type": stream_info.get("type", "unknown"),
+                        "buffer_size": len(stream_info.get("buffer", [])),
+                        "container_id": stream_info.get("container_id", "")[:12] if stream_info.get("container_id") else ""
+                    }
+                    
+                    if stream_info.get("command"):
+                        stream_detail["command"] = stream_info["command"]
+                    
+                    streams.append(stream_detail)
+                
+                return json.dumps({
+                    "streams": streams,
+                    "count": len(streams)
+                })
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error listing streams: {str(e)}"})
+    
+    def _start_stream_server(self, container, container_port: int, host_port: int, stream_key: str):
+        """Start a TCP server that streams data from container port to host port"""
+        try:
+            # Create server socket
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind(('localhost', host_port))
+            server_socket.listen(5)
+            server_socket.settimeout(1.0)  # Non-blocking accept with timeout
+            
+            print(f"Stream server listening on localhost:{host_port} for container port {container_port}")
+            
+            while stream_key in self.active_streams:
+                try:
+                    client_socket, addr = server_socket.accept()
+                    print(f"Client connected from {addr} to stream {stream_key}")
+                    
+                    # Handle client in separate thread
+                    client_thread = threading.Thread(
+                        target=self._handle_stream_client,
+                        args=(client_socket, container, container_port, stream_key),
+                        daemon=True
+                    )
+                    client_thread.start()
+                    
+                except socket.timeout:
+                    continue
+                except Exception as e:
+                    print(f"Error accepting connection for stream {stream_key}: {e}")
+                    break
+            
+            server_socket.close()
+            print(f"Stream server stopped for {stream_key}")
+            
+        except Exception as e:
+            print(f"Error in stream server for {stream_key}: {e}")
+    
+    def _handle_stream_client(self, client_socket, container, container_port: int, stream_key: str):
+        """Handle individual client connection for streaming"""
+        try:
+            # Connect to container port
+            container_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            container_socket.settimeout(5.0)
+            
+            # Get container IP
+            container.reload()
+            container_ip = container.attrs['NetworkSettings']['IPAddress']
+            
+            if not container_ip:
+                # Try getting IP from networks
+                networks = container.attrs['NetworkSettings']['Networks']
+                if networks:
+                    container_ip = list(networks.values())[0]['IPAddress']
+            
+            if not container_ip:
+                client_socket.send(b"Error: Could not determine container IP\n")
+                return
+            
+            container_socket.connect((container_ip, container_port))
+            
+            # Start bidirectional streaming
+            def forward_data(from_socket, to_socket):
+                try:
+                    while stream_key in self.active_streams:
+                        data = from_socket.recv(4096)
+                        if not data:
+                            break
+                        to_socket.send(data)
+                except:
+                    pass
+            
+            # Create threads for bidirectional communication
+            client_to_container = threading.Thread(
+                target=forward_data,
+                args=(client_socket, container_socket),
+                daemon=True
+            )
+            container_to_client = threading.Thread(
+                target=forward_data,
+                args=(container_socket, client_socket),
+                daemon=True
+            )
+            
+            client_to_container.start()
+            container_to_client.start()
+            
+            # Wait for threads to complete
+            client_to_container.join()
+            container_to_client.join()
+            
+        except Exception as e:
+            try:
+                client_socket.send(f"Stream error: {str(e)}\n".encode())
+            except:
+                pass
+            print(f"Error in stream client handler for {stream_key}: {e}")
+        finally:
+            try:
+                container_socket.close()
+            except:
+                pass
+            try:
+                client_socket.close()
+            except:
+                pass
     
     async def cleanup(self):
-        """Clean up containers and temporary files"""
+        """Clean up containers, streams, and temporary files"""
+        # Stop all active streams
+        self.active_streams.clear()
+        
+        # Stop and remove containers
         for container in self.active_containers.values():
             try:
                 container.stop()
