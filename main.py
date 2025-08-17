@@ -1,3 +1,9 @@
+"""
+Name: MCPDevServer
+Date: Sunday, August 17th, 2025 14:32
+
+
+"""
 import docker
 import os
 import tempfile
@@ -17,6 +23,9 @@ import json
 import time
 from pydantic import BaseModel
 import uvicorn
+import hashlib
+import secrets
+from functools import wraps
 from playwright.async_api import async_playwright, Browser, Page
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -39,7 +48,7 @@ class ContainerConfig(BaseModel):
 
 class MCPDockerServer:
     def __init__(self):
-        self.mcp = FastMCP("MCPDocker")
+        self.mcp = FastMCP("MCPDocker",host='0.0.0.0')
         self.docker_client = docker.from_env()
         self.active_containers = {}
         self.active_streams = {}
@@ -53,23 +62,84 @@ class MCPDockerServer:
         # Check for NVIDIA GPU support
         self.gpu_available = self._check_nvidia_gpu()
         
-        # Python documentation path (relative to script location)
+        # Multi-language documentation paths
         script_dir = Path(__file__).parent
-        self.docs_dir = script_dir / "python-documentation"
+        self.docs_dir = script_dir / "documentation"
+        self.docs_dir.mkdir(exist_ok=True)
         
-        # Auto-download Python 3.13.7 documentation if not present
-        self._ensure_python_docs()
+        # Initialize documentation for multiple languages
+        self._ensure_multi_language_docs()
         
-        # Limited set of allowed images for security
+        # Comprehensive set of allowed development images
         self.allowed_images = {
-            "ubuntu:latest",
-            "debian:latest", 
-            "fedora:latest",
-            "python:latest",
-            "node:latest",
-            "alpine:latest",
-            # "centos:latest", (Deprecated)
-            "rockylinux:latest"
+            # Base OS images
+            "ubuntu:latest", "ubuntu:22.04", "ubuntu:20.04",
+            "debian:latest", "debian:bullseye", "debian:bookworm",
+            "alpine:latest", "alpine:3.18",
+            "fedora:latest", "fedora:38",
+            "rockylinux:latest", "rockylinux:9",
+            
+            # Python development
+            "python:latest", "python:3.11", "python:3.10", "python:3.9",
+            "python:3.11-slim", "python:3.10-slim",
+            
+            # Node.js & JavaScript development
+            "node:latest", "node:18", "node:16", "node:20",
+            "node:18-alpine", "node:16-alpine",
+            
+            # .NET & C# development
+            "mcr.microsoft.com/dotnet/sdk:latest",
+            "mcr.microsoft.com/dotnet/sdk:7.0",
+            "mcr.microsoft.com/dotnet/sdk:6.0",
+            "mcr.microsoft.com/dotnet/runtime:latest",
+            "mcr.microsoft.com/dotnet/aspnet:latest",
+            
+            # Java development
+            "openjdk:latest", "openjdk:17", "openjdk:11", "openjdk:8",
+            "openjdk:17-alpine", "openjdk:11-alpine",
+            "maven:latest", "maven:3.9-openjdk-17",
+            "gradle:latest", "gradle:7-jdk17",
+            
+            # Go development
+            "golang:latest", "golang:1.21", "golang:1.20",
+            "golang:1.21-alpine", "golang:1.20-alpine",
+            
+            # Rust development
+            "rust:latest", "rust:1.70", "rust:1.69",
+            "rust:1.70-alpine", "rust:1.69-alpine",
+            
+            # PHP development
+            "php:latest", "php:8.2", "php:8.1", "php:8.0",
+            "php:8.2-fpm", "php:8.1-fpm",
+            "composer:latest",
+            
+            # Ruby development
+            "ruby:latest", "ruby:3.2", "ruby:3.1",
+            "ruby:3.2-alpine", "ruby:3.1-alpine",
+            
+            # Database images
+            "postgres:latest", "postgres:15", "postgres:14",
+            "mysql:latest", "mysql:8", "mysql:5.7",
+            "mongo:latest", "mongo:6", "mongo:5",
+            "redis:latest", "redis:7", "redis:6",
+            "mariadb:latest", "mariadb:10",
+            
+            # Development tools
+            "nginx:latest", "nginx:alpine",
+            "httpd:latest", "httpd:alpine",
+            "jenkins/jenkins:latest",
+            "sonarqube:latest",
+            "gitlab/gitlab-ce:latest",
+            
+            # Cloud CLI images
+            "amazon/aws-cli:latest",
+            "mcr.microsoft.com/azure-cli:latest",
+            "google/cloud-sdk:latest",
+            
+            # IDE and development environments
+            "theiaide/theia:latest",
+            "codercom/code-server:latest",
+            "linuxserver/code-server:latest"
         }
         
         # Add GPU-enabled images if GPU is available
@@ -84,45 +154,99 @@ class MCPDockerServer:
         
         self._register_tools()
     
-    def _ensure_python_docs(self):
-        """Ensure Python 3.13 documentation is available, download if necessary"""
-        version_file = self.docs_dir / "version.txt"
-        target_version = "3.13"
+    def _ensure_multi_language_docs(self):
+        """Ensure documentation for multiple programming languages is available"""
+        # Define supported languages and their documentation sources
+        self.supported_languages = {
+            'python': {
+                'version': '3.13',
+                'url_template': 'https://docs.python.org/{version}/archives/python-{version}-docs-text.zip',
+                'folder': 'python-docs'
+            },
+            'csharp': {
+                'version': 'net-7.0',
+                'url_template': 'https://github.com/dotnet/docs/archive/refs/heads/main.zip',
+                'folder': 'csharp-docs'
+            },
+            'javascript': {
+                'version': 'latest',
+                'url_template': 'https://github.com/mdn/content/archive/refs/heads/main.zip',
+                'folder': 'javascript-docs'
+            },
+            'java': {
+                'version': '17',
+                'url_template': 'https://docs.oracle.com/en/java/javase/17/docs/api/',
+                'folder': 'java-docs'
+            },
+            'go': {
+                'version': 'latest',
+                'url_template': 'https://github.com/golang/go/archive/refs/heads/master.zip',
+                'folder': 'go-docs'
+            },
+            'rust': {
+                'version': 'latest',
+                'url_template': 'https://github.com/rust-lang/rust/archive/refs/heads/master.zip',
+                'folder': 'rust-docs'
+            }
+        }
         
-        # Check if we already have the correct version
-        if version_file.exists():
-            try:
-                current_version = version_file.read_text().strip()
-                if current_version == target_version:
-                    return
-            except:
-                pass
+        # Download Python docs by default (most stable)
+        self._download_language_docs('python')
+        self._download_language_docs('csharp')
+        self._download_language_docs('javascript')
+        self._download_language_docs('java')
+        self._download_language_docs('go')
+        self._download_language_docs('rust')
         
-        print(f"Downloading Python {target_version} documentation...")
-        try:
-            self._download_python_docs(target_version)
-            # Write version file
-            version_file.write_text(target_version)
-            print(f"Python {target_version} documentation downloaded successfully")
-        except Exception as e:
-            print(f"Warning: Could not download Python documentation: {e}")
-            print("Using existing documentation if available")
+        print("Multi-language documentation system initialized")
     
-    def _download_python_docs(self, version: str):
-        """Download and extract Python documentation"""
-        # Create docs directory if it doesn't exist
-        self.docs_dir.mkdir(exist_ok=True)
+    def _download_language_docs(self, language: str):
+        """Download and extract documentation for various programming languages"""
+        if language not in self.supported_languages:
+            print(f"Language {language} not supported")
+            return
         
-        # Download URL for Python documentation (use the simpler format)
+        lang_config = self.supported_languages[language]
+        lang_docs_dir = self.docs_dir / lang_config['folder']
+        
+        # Skip download if documentation already exists
+        if lang_docs_dir.exists() and any(lang_docs_dir.iterdir()):
+            print(f"{language} documentation already exists, skipping download")
+            return
+            
+        lang_docs_dir.mkdir(exist_ok=True)
+        
+        try:
+            if language == 'python':
+                self._download_python_docs(lang_config['version'], lang_docs_dir)
+            elif language == 'csharp':
+                self._download_github_docs(lang_config['url_template'], lang_docs_dir, language)
+            elif language == 'javascript':
+                self._download_github_docs(lang_config['url_template'], lang_docs_dir, language)
+            elif language == 'go':
+                self._download_github_docs(lang_config['url_template'], lang_docs_dir, language)
+            elif language == 'rust':
+                self._download_github_docs(lang_config['url_template'], lang_docs_dir, language)
+            elif language == 'java':
+                print(f"Java documentation download not implemented yet (complex HTML structure)")
+                return
+            
+            print(f"✅ {language} documentation downloaded successfully")
+        except Exception as e:
+            print(f"❌ Failed to download {language} documentation: {str(e)}")
+    
+    def _download_python_docs(self, version: str, target_dir: Path):
+        """Download and extract Python documentation"""
+        # Download URL for Python documentation
         url = f"https://docs.python.org/{version}/archives/python-{version}-docs-text.zip"
         
         # Download to temporary file
         temp_zip = self.temp_dir + "/python-docs.zip"
         
-        print(f"Downloading from: {url}")
+        print(f"Downloading Python docs from: {url}")
         urllib.request.urlretrieve(url, temp_zip)
         
-        # Extract to docs directory
+        # Extract to target directory
         with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
             # Extract all files, but strip the top-level directory
             for member in zip_ref.infolist():
@@ -131,7 +255,41 @@ class MCPDockerServer:
                     # Remove the first directory component
                     member.filename = '/'.join(member.filename.split('/')[1:])
                     if member.filename:  # Don't extract empty filenames
-                        zip_ref.extract(member, self.docs_dir)
+                        zip_ref.extract(member, target_dir)
+        
+        # Write version info
+        version_file = target_dir / "version.txt"
+        version_file.write_text(version)
+        
+        # Clean up temp file
+        os.remove(temp_zip)
+    
+    def _download_github_docs(self, url: str, target_dir: Path, language: str):
+        """Download and extract documentation from GitHub repositories"""
+        temp_zip = self.temp_dir + f"/{language}-docs.zip"
+        
+        print(f"Downloading {language} docs from: {url}")
+        urllib.request.urlretrieve(url, temp_zip)
+        
+        # Extract relevant documentation files
+        with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+            for member in zip_ref.infolist():
+                # Only extract documentation files (markdown, text, etc.)
+                if any(member.filename.lower().endswith(ext) for ext in ['.md', '.txt', '.rst']):
+                    # Skip large directories and focus on docs
+                    if any(doc_dir in member.filename.lower() for doc_dir in ['doc', 'guide', 'tutorial', 'readme']):
+                        try:
+                            # Clean up the path structure
+                            clean_path = '/'.join(member.filename.split('/')[1:])  # Remove root directory
+                            if clean_path:
+                                member.filename = clean_path
+                                zip_ref.extract(member, target_dir)
+                        except:
+                            continue
+        
+        # Write version info
+        version_file = target_dir / "version.txt"
+        version_file.write_text("latest")
         
         # Clean up temp file
         os.remove(temp_zip)
@@ -191,6 +349,7 @@ class MCPDockerServer:
             return f"Error: {str(e)}"
     
     def _register_tools(self):
+
         @self.mcp.tool()
         async def list_allowed_images() -> List[str]:
             """List allowed Docker images that can be used to create containers"""
@@ -1521,14 +1680,15 @@ class MCPDockerServer:
         async def list_python_docs() -> List[str]:
             """List available Python documentation files"""
             try:
-                if not self.docs_dir.exists():
+                python_docs_dir = self.docs_dir / "python-docs"
+                if not python_docs_dir.exists():
                     return ["Python documentation not available. Try downloading first."]
                 
                 docs_files = []
-                for root, _, files in os.walk(self.docs_dir):
+                for root, _, files in os.walk(python_docs_dir):
                     for file in files:
-                        if file.endswith('.txt'):
-                            rel_path = os.path.relpath(os.path.join(root, file), self.docs_dir)
+                        if file.endswith(('.txt', '.md', '.rst')):
+                            rel_path = os.path.relpath(os.path.join(root, file), python_docs_dir)
                             docs_files.append(rel_path)
                 
                 return sorted(docs_files) if docs_files else ["No documentation files found"]
@@ -1540,13 +1700,14 @@ class MCPDockerServer:
         async def read_python_doc(file_path: str, max_lines: int = 500) -> str:
             """Read a specific Python documentation file"""
             try:
-                doc_file = self.docs_dir / file_path
+                python_docs_dir = self.docs_dir / "python-docs"
+                doc_file = python_docs_dir / file_path
                 
                 if not doc_file.exists():
                     return f"Documentation file {file_path} not found"
                 
-                if not doc_file.suffix == '.txt':
-                    return f"File {file_path} is not a text documentation file"
+                if not doc_file.suffix in ['.txt', '.md', '.rst']:
+                    return f"File {file_path} is not a supported documentation file format"
                 
                 with open(doc_file, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
@@ -1566,19 +1727,20 @@ class MCPDockerServer:
         async def search_python_docs(query: str, max_results: int = 10) -> str:
             """Search through Python documentation for specific content"""
             try:
-                if not self.docs_dir.exists():
+                python_docs_dir = self.docs_dir / "python-docs"
+                if not python_docs_dir.exists():
                     return "Python documentation not available. Try downloading first."
                 
                 query_lower = query.lower()
                 results = []
                 
-                for root, _, files in os.walk(self.docs_dir):
+                for root, _, files in os.walk(python_docs_dir):
                     for file in files:
-                        if not file.endswith('.txt'):
+                        if not file.endswith(('.txt', '.md', '.rst')):
                             continue
                             
                         file_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(file_path, self.docs_dir)
+                        rel_path = os.path.relpath(file_path, python_docs_dir)
                         
                         try:
                             with open(file_path, 'r', encoding='utf-8') as f:
