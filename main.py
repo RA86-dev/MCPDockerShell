@@ -153,6 +153,7 @@ class MCPDockerServer:
             })
         
         self._register_tools()
+        self._register_resources()
     
     def _ensure_multi_language_docs(self):
         """Ensure documentation for multiple programming languages is available"""
@@ -1830,6 +1831,307 @@ class MCPDockerServer:
                 
             except Exception as e:
                 return f"Error getting Python documentation info: {str(e)}"
+        
+        @self.mcp.tool()
+        async def list_language_docs(language: str) -> List[str]:
+            """List available documentation files for a specific programming language (python, csharp, javascript, java, go, rust)"""
+            try:
+                if language not in self.supported_languages:
+                    return [f"Language '{language}' not supported. Available: {', '.join(self.supported_languages.keys())}"]
+                
+                lang_config = self.supported_languages[language]
+                lang_docs_dir = self.docs_dir / lang_config['folder']
+                
+                if not lang_docs_dir.exists():
+                    return [f"{language} documentation not available. Try downloading first."]
+                
+                docs_files = []
+                for root, _, files in os.walk(lang_docs_dir):
+                    for file in files:
+                        if file.endswith(('.txt', '.md', '.rst')):
+                            rel_path = os.path.relpath(os.path.join(root, file), lang_docs_dir)
+                            docs_files.append(rel_path)
+                
+                return sorted(docs_files) if docs_files else ["No documentation files found"]
+                
+            except Exception as e:
+                return [f"Error listing {language} docs: {str(e)}"]
+        
+        @self.mcp.tool()
+        async def read_language_doc(language: str, file_path: str, max_lines: int = 500) -> str:
+            """Read a specific documentation file for a programming language (python, csharp, javascript, java, go, rust)"""
+            try:
+                if language not in self.supported_languages:
+                    return f"Language '{language}' not supported. Available: {', '.join(self.supported_languages.keys())}"
+                
+                lang_config = self.supported_languages[language]
+                lang_docs_dir = self.docs_dir / lang_config['folder']
+                doc_file = lang_docs_dir / file_path
+                
+                if not doc_file.exists():
+                    return f"Documentation file {file_path} not found for {language}"
+                
+                if not doc_file.suffix in ['.txt', '.md', '.rst']:
+                    return f"File {file_path} is not a supported documentation file format"
+                
+                with open(doc_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                if len(lines) > max_lines:
+                    content = ''.join(lines[:max_lines])
+                    content += f"\n\n[Content truncated - showing first {max_lines} lines of {len(lines)} total lines]"
+                else:
+                    content = ''.join(lines)
+                
+                return content
+                
+            except Exception as e:
+                return f"Error reading {language} documentation: {str(e)}"
+        
+        @self.mcp.tool()
+        async def search_language_docs(language: str, query: str, max_results: int = 10) -> str:
+            """Search through documentation for a specific programming language (python, csharp, javascript, java, go, rust)"""
+            try:
+                if language not in self.supported_languages:
+                    return f"Language '{language}' not supported. Available: {', '.join(self.supported_languages.keys())}"
+                
+                lang_config = self.supported_languages[language]
+                lang_docs_dir = self.docs_dir / lang_config['folder']
+                
+                if not lang_docs_dir.exists():
+                    return f"{language} documentation not available. Try downloading first."
+                
+                query_lower = query.lower()
+                results = []
+                
+                for root, _, files in os.walk(lang_docs_dir):
+                    for file in files:
+                        if not file.endswith(('.txt', '.md', '.rst')):
+                            continue
+                            
+                        file_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(file_path, lang_docs_dir)
+                        
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            # Search for query in content (case insensitive)
+                            if query_lower in content.lower():
+                                # Find context around matches
+                                lines = content.split('\n')
+                                matches = []
+                                
+                                for i, line in enumerate(lines):
+                                    if query_lower in line.lower():
+                                        # Get context lines
+                                        start = max(0, i - 2)
+                                        end = min(len(lines), i + 3)
+                                        context = '\n'.join(lines[start:end])
+                                        matches.append(f"Line {i+1}: {context}")
+                                        
+                                        if len(matches) >= 3:  # Limit matches per file
+                                            break
+                                
+                                if matches:
+                                    results.append({
+                                        'file': rel_path,
+                                        'matches': matches[:3]  # Limit to 3 matches per file
+                                    })
+                                    
+                                    if len(results) >= max_results:
+                                        break
+                        except:
+                            continue
+                
+                if not results:
+                    return f"No matches found for '{query}' in {language} documentation"
+                
+                # Format results
+                output = f"Found {len(results)} files containing '{query}' in {language} documentation:\n\n"
+                for result in results:
+                    output += f"📄 {result['file']}:\n"
+                    for match in result['matches']:
+                        output += f"   {match}\n\n"
+                    output += "-" * 50 + "\n\n"
+                
+                return output
+                
+            except Exception as e:
+                return f"Error searching {language} documentation: {str(e)}"
+        
+        @self.mcp.tool()
+        async def get_language_doc_info(language: str) -> str:
+            """Get information about downloaded documentation for a specific programming language (python, csharp, javascript, java, go, rust)"""
+            try:
+                if language not in self.supported_languages:
+                    return f"Language '{language}' not supported. Available: {', '.join(self.supported_languages.keys())}"
+                
+                lang_config = self.supported_languages[language]
+                lang_docs_dir = self.docs_dir / lang_config['folder']
+                version_file = lang_docs_dir / "version.txt"
+                
+                if not lang_docs_dir.exists():
+                    return f"{language} documentation not downloaded yet"
+                
+                version = lang_config.get('version', 'Unknown')
+                if version_file.exists():
+                    try:
+                        version = version_file.read_text().strip()
+                    except:
+                        pass
+                
+                # Count files
+                doc_count = 0
+                total_size = 0
+                for root, _, files in os.walk(lang_docs_dir):
+                    for file in files:
+                        if file.endswith(('.txt', '.md', '.rst')):
+                            doc_count += 1
+                            file_path = os.path.join(root, file)
+                            try:
+                                total_size += os.path.getsize(file_path)
+                            except:
+                                pass
+                
+                size_mb = total_size / (1024 * 1024)
+                
+                return f"""{language.title()} Documentation Info:
+📖 Version: {version}
+📁 Location: {lang_docs_dir}
+📄 Files: {doc_count} documentation files
+💾 Size: {size_mb:.1f} MB
+🔍 Status: Ready for AI reading and searching"""
+                
+            except Exception as e:
+                return f"Error getting {language} documentation info: {str(e)}"
+        
+        @self.mcp.tool()
+        async def download_language_docs(language: str) -> str:
+            """Download documentation for a specific programming language (python, csharp, javascript, java, go, rust)"""
+            try:
+                if language not in self.supported_languages:
+                    return f"Language '{language}' not supported. Available: {', '.join(self.supported_languages.keys())}"
+                
+                print(f"Starting download for {language} documentation...")
+                self._download_language_docs(language)
+                return f"✅ {language} documentation download completed successfully"
+                
+            except Exception as e:
+                return f"❌ Error downloading {language} documentation: {str(e)}"
+        
+        @self.mcp.tool()
+        async def list_supported_languages() -> List[str]:
+            """List all supported programming languages for documentation"""
+            try:
+                languages_info = []
+                for lang, config in self.supported_languages.items():
+                    lang_docs_dir = self.docs_dir / config['folder']
+                    status = "✅ Available" if lang_docs_dir.exists() and any(lang_docs_dir.iterdir()) else "❌ Not downloaded"
+                    languages_info.append(f"{lang.title()} ({config['version']}) - {status}")
+                
+                return languages_info
+                
+            except Exception as e:
+                return [f"Error listing supported languages: {str(e)}"]
+    
+    def _register_resources(self):
+        """Register MCP resources for documentation access"""
+        
+        @self.mcp.resource("documentation://languages")
+        async def list_documentation_languages() -> str:
+            """List all supported programming languages for documentation"""
+            try:
+                languages_info = []
+                for lang, config in self.supported_languages.items():
+                    lang_docs_dir = self.docs_dir / config['folder']
+                    if lang_docs_dir.exists() and any(lang_docs_dir.iterdir()):
+                        languages_info.append({
+                            'language': lang,
+                            'version': config.get('version', 'Unknown'),
+                            'folder': config['folder'],
+                            'available': True
+                        })
+                    else:
+                        languages_info.append({
+                            'language': lang,
+                            'version': config.get('version', 'Unknown'),
+                            'folder': config['folder'],
+                            'available': False
+                        })
+                
+                return json.dumps(languages_info, indent=2)
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error listing languages: {str(e)}"})
+        
+        @self.mcp.resource("documentation://{language}/files")
+        async def list_documentation_files(language: str) -> str:
+            """List documentation files for a specific language"""
+            try:
+                if language not in self.supported_languages:
+                    return json.dumps({"error": f"Language '{language}' not supported"})
+                
+                lang_config = self.supported_languages[language]
+                lang_docs_dir = self.docs_dir / lang_config['folder']
+                
+                if not lang_docs_dir.exists():
+                    return json.dumps({"error": f"{language} documentation not available"})
+                
+                files_info = []
+                for root, _, files in os.walk(lang_docs_dir):
+                    for file in files:
+                        if file.endswith(('.txt', '.md', '.rst')):
+                            file_path = os.path.join(root, file)
+                            rel_path = os.path.relpath(file_path, lang_docs_dir)
+                            try:
+                                file_size = os.path.getsize(file_path)
+                                files_info.append({
+                                    'path': rel_path,
+                                    'size': file_size,
+                                    'type': file.split('.')[-1]
+                                })
+                            except:
+                                continue
+                
+                return json.dumps({
+                    'language': language,
+                    'files': sorted(files_info, key=lambda x: x['path'])
+                }, indent=2)
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error listing files: {str(e)}"})
+        
+        @self.mcp.resource("documentation://{language}/file/{file_path}")
+        async def get_documentation_file(language: str, file_path: str) -> str:
+            """Get content of a specific documentation file"""
+            try:
+                if language not in self.supported_languages:
+                    return json.dumps({"error": f"Language '{language}' not supported"})
+                
+                lang_config = self.supported_languages[language]
+                lang_docs_dir = self.docs_dir / lang_config['folder']
+                doc_file = lang_docs_dir / file_path
+                
+                if not doc_file.exists():
+                    return json.dumps({"error": f"File {file_path} not found"})
+                
+                if not doc_file.suffix in ['.txt', '.md', '.rst']:
+                    return json.dumps({"error": f"File format not supported"})
+                
+                with open(doc_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                return json.dumps({
+                    'language': language,
+                    'file_path': file_path,
+                    'content': content,
+                    'size': len(content),
+                    'type': doc_file.suffix[1:]
+                }, indent=2)
+                
+            except Exception as e:
+                return json.dumps({"error": f"Error reading file: {str(e)}"})
     
     async def _get_playwright_page(self, page_id: str):
         """Helper method to get a Playwright page by ID"""
