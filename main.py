@@ -17,6 +17,17 @@ import json
 import time
 from pydantic import BaseModel
 import uvicorn
+from playwright.async_api import async_playwright, Browser, Page
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+import os
+import urllib.request
+import zipfile
+
 
 class ContainerConfig(BaseModel):
     image: str
@@ -34,8 +45,20 @@ class MCPDockerServer:
         self.active_streams = {}
         self.temp_dir = tempfile.mkdtemp(prefix="mcpdocker_")
         
+        # Browser automation support
+        self.playwright_instance = None
+        self.active_browsers = {}
+        self.active_selenium_drivers = {}
+        
         # Check for NVIDIA GPU support
         self.gpu_available = self._check_nvidia_gpu()
+        
+        # Python documentation path (relative to script location)
+        script_dir = Path(__file__).parent
+        self.docs_dir = script_dir / "python-documentation"
+        
+        # Auto-download Python 3.13.7 documentation if not present
+        self._ensure_python_docs()
         
         # Limited set of allowed images for security
         self.allowed_images = {
@@ -60,6 +83,58 @@ class MCPDockerServer:
             })
         
         self._register_tools()
+    
+    def _ensure_python_docs(self):
+        """Ensure Python 3.13 documentation is available, download if necessary"""
+        version_file = self.docs_dir / "version.txt"
+        target_version = "3.13"
+        
+        # Check if we already have the correct version
+        if version_file.exists():
+            try:
+                current_version = version_file.read_text().strip()
+                if current_version == target_version:
+                    return
+            except:
+                pass
+        
+        print(f"Downloading Python {target_version} documentation...")
+        try:
+            self._download_python_docs(target_version)
+            # Write version file
+            version_file.write_text(target_version)
+            print(f"Python {target_version} documentation downloaded successfully")
+        except Exception as e:
+            print(f"Warning: Could not download Python documentation: {e}")
+            print("Using existing documentation if available")
+    
+    def _download_python_docs(self, version: str):
+        """Download and extract Python documentation"""
+        # Create docs directory if it doesn't exist
+        self.docs_dir.mkdir(exist_ok=True)
+        
+        # Download URL for Python documentation (use the simpler format)
+        url = f"https://docs.python.org/{version}/archives/python-{version}-docs-text.zip"
+        
+        # Download to temporary file
+        temp_zip = self.temp_dir + "/python-docs.zip"
+        
+        print(f"Downloading from: {url}")
+        urllib.request.urlretrieve(url, temp_zip)
+        
+        # Extract to docs directory
+        with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+            # Extract all files, but strip the top-level directory
+            for member in zip_ref.infolist():
+                # Skip the top-level directory
+                if '/' in member.filename:
+                    # Remove the first directory component
+                    member.filename = '/'.join(member.filename.split('/')[1:])
+                    if member.filename:  # Don't extract empty filenames
+                        zip_ref.extract(member, self.docs_dir)
+        
+        # Clean up temp file
+        os.remove(temp_zip)
     
     def _check_nvidia_gpu(self) -> bool:
         """Check if NVIDIA GPU and Docker GPU support is available"""
@@ -120,7 +195,6 @@ class MCPDockerServer:
         async def list_allowed_images() -> List[str]:
             """List allowed Docker images that can be used to create containers"""
             return sorted(list(self.allowed_images))
-        
         @self.mcp.tool()
         async def get_gpu_status() -> str:
             """Get NVIDIA GPU status and availability"""
@@ -252,22 +326,6 @@ class MCPDockerServer:
             except Exception as e:
                 return f"Error uploading file: {str(e)}"
         
-        @self.mcp.tool()
-        async def download_file(filename: str) -> str:
-            """Download a file from the shared workspace"""
-            try:
-                file_path = Path(self.temp_dir) / filename
-                
-                if not file_path.exists():
-                    return f"File {filename} not found"
-                
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                return content
-                
-            except Exception as e:
-                return f"Error downloading file: {str(e)}"
         
         @self.mcp.tool()
         async def list_workspace_files() -> List[str]:
@@ -961,6 +1019,662 @@ class MCPDockerServer:
                 
             except Exception as e:
                 return json.dumps({"error": f"Error listing streams: {str(e)}"})
+        
+        # Playwright Tools
+        @self.mcp.tool()
+        async def playwright_launch_browser(browser_type: str = "chromium", headless: bool = True, args: List[str] = None) -> str:
+            """Launch a Playwright browser instance (chromium, firefox, or webkit)"""
+            try:
+                if self.playwright_instance is None:
+                    self.playwright_instance = await async_playwright().start()
+                
+                browser_args = args or []
+                
+                if browser_type.lower() == "chromium":
+                    browser = await self.playwright_instance.chromium.launch(
+                        headless=headless,
+                        args=browser_args
+                    )
+                elif browser_type.lower() == "firefox":
+                    browser = await self.playwright_instance.firefox.launch(
+                        headless=headless,
+                        args=browser_args
+                    )
+                elif browser_type.lower() == "webkit":
+                    browser = await self.playwright_instance.webkit.launch(
+                        headless=headless,
+                        args=browser_args
+                    )
+                else:
+                    return f"Unsupported browser type: {browser_type}. Use chromium, firefox, or webkit."
+                
+                browser_id = f"pw_{browser_type}_{len(self.active_browsers)}"
+                self.active_browsers[browser_id] = browser
+                
+                return f"Browser {browser_type} launched with ID: {browser_id}"
+                
+            except Exception as e:
+                return f"Error launching browser: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_create_page(browser_id: str, viewport_width: int = 1920, viewport_height: int = 1080) -> str:
+            """Create a new page in a Playwright browser"""
+            try:
+                if browser_id not in self.active_browsers:
+                    return f"Browser {browser_id} not found"
+                
+                browser = self.active_browsers[browser_id]
+                page = await browser.new_page(viewport={'width': viewport_width, 'height': viewport_height})
+                
+                # Store page reference in browser for tracking
+                if not hasattr(browser, '_page_references'):
+                    browser._page_references = {}
+                
+                page_id = f"{browser_id}_page_{len(browser._page_references)}"
+                browser._page_references[page_id] = page
+                
+                return f"Page created with ID: {page_id}"
+                
+            except Exception as e:
+                return f"Error creating page: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_navigate(page_id: str, url: str, wait_until: str = "load") -> str:
+            """Navigate to a URL in a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):  # Error message
+                    return page
+                
+                await page.goto(url, wait_until=wait_until)
+                return f"Navigated to {url}"
+                
+            except Exception as e:
+                return f"Error navigating: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_click(page_id: str, selector: str, timeout: int = 30000) -> str:
+            """Click an element on a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                await page.click(selector, timeout=timeout)
+                return f"Clicked element: {selector}"
+                
+            except Exception as e:
+                return f"Error clicking element: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_type(page_id: str, selector: str, text: str, timeout: int = 30000) -> str:
+            """Type text into an element on a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                await page.fill(selector, text, timeout=timeout)
+                return f"Typed '{text}' into {selector}"
+                
+            except Exception as e:
+                return f"Error typing text: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_screenshot(page_id: str, filename: str = None, full_page: bool = False, return_base64: bool = False) -> str:
+            """Take a screenshot of a Playwright page and optionally return as base64 for AI viewing"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                if filename is None:
+                    filename = f"screenshot_{page_id}_{int(time.time())}.png"
+                
+                screenshot_path = Path(self.temp_dir) / filename
+                
+                if return_base64:
+                    # Take screenshot as bytes and return base64 for AI viewing
+                    screenshot_bytes = await page.screenshot(full_page=full_page)
+                    
+                    # Also save to file
+                    with open(screenshot_path, 'wb') as f:
+                        f.write(screenshot_bytes)
+                    
+                    import base64
+                    screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                    
+                    return json.dumps({
+                        "type": "screenshot",
+                        "filename": filename,
+                        "path": str(screenshot_path),
+                        "base64": screenshot_base64,
+                        "format": "png",
+                        "message": f"Screenshot saved to {filename} and available for AI viewing"
+                    })
+                else:
+                    # Regular file-only screenshot
+                    await page.screenshot(path=str(screenshot_path), full_page=full_page)
+                    return f"Screenshot saved to {filename}"
+                
+            except Exception as e:
+                return f"Error taking screenshot: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_get_text(page_id: str, selector: str, timeout: int = 30000) -> str:
+            """Get text content from an element on a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                text = await page.text_content(selector, timeout=timeout)
+                return text or ""
+                
+            except Exception as e:
+                return f"Error getting text: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_wait_for_selector(page_id: str, selector: str, timeout: int = 30000, state: str = "visible") -> str:
+            """Wait for an element to appear on a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                await page.wait_for_selector(selector, timeout=timeout, state=state)
+                return f"Element {selector} is now {state}"
+                
+            except Exception as e:
+                return f"Error waiting for selector: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_evaluate(page_id: str, script: str) -> str:
+            """Execute JavaScript in a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                result = await page.evaluate(script)
+                return str(result)
+                
+            except Exception as e:
+                return f"Error evaluating script: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_close_page(page_id: str) -> str:
+            """Close a Playwright page"""
+            try:
+                page = await self._get_playwright_page(page_id)
+                if isinstance(page, str):
+                    return page
+                
+                await page.close()
+                
+                # Remove from browser references
+                for browser in self.active_browsers.values():
+                    if hasattr(browser, '_page_references') and page_id in browser._page_references:
+                        del browser._page_references[page_id]
+                        break
+                
+                return f"Page {page_id} closed"
+                
+            except Exception as e:
+                return f"Error closing page: {str(e)}"
+        
+        @self.mcp.tool()
+        async def playwright_close_browser(browser_id: str) -> str:
+            """Close a Playwright browser"""
+            try:
+                if browser_id not in self.active_browsers:
+                    return f"Browser {browser_id} not found"
+                
+                browser = self.active_browsers[browser_id]
+                await browser.close()
+                del self.active_browsers[browser_id]
+                
+                return f"Browser {browser_id} closed"
+                
+            except Exception as e:
+                return f"Error closing browser: {str(e)}"
+        
+        # Selenium Tools
+        @self.mcp.tool()
+        async def selenium_launch_driver(browser_type: str = "chrome", headless: bool = True, options: List[str] = None) -> str:
+            """Launch a Selenium WebDriver (chrome or firefox)"""
+            try:
+                browser_options = options or []
+                
+                if browser_type.lower() == "chrome":
+                    chrome_options = ChromeOptions()
+                    if headless:
+                        chrome_options.add_argument("--headless")
+                    chrome_options.add_argument("--no-sandbox")
+                    chrome_options.add_argument("--disable-dev-shm-usage")
+                    
+                    for option in browser_options:
+                        chrome_options.add_argument(option)
+                    
+                    driver = webdriver.Chrome(options=chrome_options)
+                    
+                elif browser_type.lower() == "firefox":
+                    firefox_options = FirefoxOptions()
+                    if headless:
+                        firefox_options.add_argument("--headless")
+                    
+                    for option in browser_options:
+                        firefox_options.add_argument(option)
+                    
+                    driver = webdriver.Firefox(options=firefox_options)
+                    
+                else:
+                    return f"Unsupported browser type: {browser_type}. Use chrome or firefox."
+                
+                driver_id = f"sel_{browser_type}_{len(self.active_selenium_drivers)}"
+                self.active_selenium_drivers[driver_id] = driver
+                
+                return f"Selenium {browser_type} driver launched with ID: {driver_id}"
+                
+            except Exception as e:
+                return f"Error launching Selenium driver: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_navigate(driver_id: str, url: str) -> str:
+            """Navigate to a URL using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                driver.get(url)
+                
+                return f"Navigated to {url}"
+                
+            except Exception as e:
+                return f"Error navigating: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_click(driver_id: str, selector: str, by: str = "css", timeout: int = 10) -> str:
+            """Click an element using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                wait = WebDriverWait(driver, timeout)
+                
+                by_mapping = {
+                    "css": By.CSS_SELECTOR,
+                    "xpath": By.XPATH,
+                    "id": By.ID,
+                    "name": By.NAME,
+                    "class": By.CLASS_NAME,
+                    "tag": By.TAG_NAME
+                }
+                
+                if by not in by_mapping:
+                    return f"Invalid selector type: {by}. Use css, xpath, id, name, class, or tag."
+                
+                element = wait.until(EC.element_to_be_clickable((by_mapping[by], selector)))
+                element.click()
+                
+                return f"Clicked element: {selector}"
+                
+            except Exception as e:
+                return f"Error clicking element: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_type(driver_id: str, selector: str, text: str, by: str = "css", timeout: int = 10, clear: bool = True) -> str:
+            """Type text into an element using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                wait = WebDriverWait(driver, timeout)
+                
+                by_mapping = {
+                    "css": By.CSS_SELECTOR,
+                    "xpath": By.XPATH,
+                    "id": By.ID,
+                    "name": By.NAME,
+                    "class": By.CLASS_NAME,
+                    "tag": By.TAG_NAME
+                }
+                
+                if by not in by_mapping:
+                    return f"Invalid selector type: {by}. Use css, xpath, id, name, class, or tag."
+                
+                element = wait.until(EC.presence_of_element_located((by_mapping[by], selector)))
+                if clear:
+                    element.clear()
+                element.send_keys(text)
+                
+                return f"Typed '{text}' into {selector}"
+                
+            except Exception as e:
+                return f"Error typing text: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_screenshot(driver_id: str, filename: str = None) -> str:
+            """Take a screenshot using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                
+                if filename is None:
+                    filename = f"selenium_screenshot_{driver_id}_{int(time.time())}.png"
+                
+                screenshot_path = Path(self.temp_dir) / filename
+                driver.save_screenshot(str(screenshot_path))
+                
+                return f"Screenshot saved to {filename}"
+                
+            except Exception as e:
+                return f"Error taking screenshot: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_get_text(driver_id: str, selector: str, by: str = "css", timeout: int = 10) -> str:
+            """Get text content from an element using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                wait = WebDriverWait(driver, timeout)
+                
+                by_mapping = {
+                    "css": By.CSS_SELECTOR,
+                    "xpath": By.XPATH,
+                    "id": By.ID,
+                    "name": By.NAME,
+                    "class": By.CLASS_NAME,
+                    "tag": By.TAG_NAME
+                }
+                
+                if by not in by_mapping:
+                    return f"Invalid selector type: {by}. Use css, xpath, id, name, class, or tag."
+                
+                element = wait.until(EC.presence_of_element_located((by_mapping[by], selector)))
+                return element.text
+                
+            except Exception as e:
+                return f"Error getting text: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_execute_script(driver_id: str, script: str) -> str:
+            """Execute JavaScript using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                result = driver.execute_script(script)
+                
+                return str(result) if result is not None else "Script executed successfully"
+                
+            except Exception as e:
+                return f"Error executing script: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_wait_for_element(driver_id: str, selector: str, by: str = "css", timeout: int = 10, condition: str = "presence") -> str:
+            """Wait for an element using Selenium"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                wait = WebDriverWait(driver, timeout)
+                
+                by_mapping = {
+                    "css": By.CSS_SELECTOR,
+                    "xpath": By.XPATH,
+                    "id": By.ID,
+                    "name": By.NAME,
+                    "class": By.CLASS_NAME,
+                    "tag": By.TAG_NAME
+                }
+                
+                if by not in by_mapping:
+                    return f"Invalid selector type: {by}. Use css, xpath, id, name, class, or tag."
+                
+                condition_mapping = {
+                    "presence": EC.presence_of_element_located,
+                    "visible": EC.visibility_of_element_located,
+                    "clickable": EC.element_to_be_clickable
+                }
+                
+                if condition not in condition_mapping:
+                    return f"Invalid condition: {condition}. Use presence, visible, or clickable."
+                
+                wait.until(condition_mapping[condition]((by_mapping[by], selector)))
+                return f"Element {selector} is now {condition}"
+                
+            except Exception as e:
+                return f"Error waiting for element: {str(e)}"
+        
+        @self.mcp.tool()
+        async def selenium_close_driver(driver_id: str) -> str:
+            """Close a Selenium driver"""
+            try:
+                if driver_id not in self.active_selenium_drivers:
+                    return f"Driver {driver_id} not found"
+                
+                driver = self.active_selenium_drivers[driver_id]
+                driver.quit()
+                del self.active_selenium_drivers[driver_id]
+                
+                return f"Driver {driver_id} closed"
+                
+            except Exception as e:
+                return f"Error closing driver: {str(e)}"
+        
+        @self.mcp.tool()
+        async def list_browser_instances() -> List[str]:
+            """List all active browser instances"""
+            instances = []
+            
+            # Add Playwright browsers
+            for browser_id in self.active_browsers.keys():
+                instances.append(f"Playwright: {browser_id}")
+            
+            # Add Selenium drivers
+            for driver_id in self.active_selenium_drivers.keys():
+                instances.append(f"Selenium: {driver_id}")
+            
+            return instances if instances else ["No active browser instances"]
+        
+        @self.mcp.tool()
+        async def share_screenshot_with_ai(filename: str) -> str:
+            """Share a screenshot file with AI by returning it as base64"""
+            try:
+                file_path = Path(self.temp_dir) / filename
+                
+                if not file_path.exists():
+                    return f"Screenshot file {filename} not found in workspace"
+                
+                if not file_path.suffix.lower() in ['.png', '.jpg', '.jpeg']:
+                    return f"File {filename} is not a valid image format"
+                
+                import base64
+                with open(file_path, 'rb') as f:
+                    image_bytes = f.read()
+                
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                
+                return json.dumps({
+                    "type": "image_share",
+                    "filename": filename,
+                    "path": str(file_path),
+                    "base64": image_base64,
+                    "format": file_path.suffix.lower().replace('.', ''),
+                    "message": f"Screenshot {filename} is now available for AI viewing"
+                })
+                
+            except Exception as e:
+                return f"Error sharing screenshot: {str(e)}"
+        
+        @self.mcp.tool()
+        async def list_python_docs() -> List[str]:
+            """List available Python documentation files"""
+            try:
+                if not self.docs_dir.exists():
+                    return ["Python documentation not available. Try downloading first."]
+                
+                docs_files = []
+                for root, _, files in os.walk(self.docs_dir):
+                    for file in files:
+                        if file.endswith('.txt'):
+                            rel_path = os.path.relpath(os.path.join(root, file), self.docs_dir)
+                            docs_files.append(rel_path)
+                
+                return sorted(docs_files) if docs_files else ["No documentation files found"]
+                
+            except Exception as e:
+                return [f"Error listing Python docs: {str(e)}"]
+        
+        @self.mcp.tool()
+        async def read_python_doc(file_path: str, max_lines: int = 500) -> str:
+            """Read a specific Python documentation file"""
+            try:
+                doc_file = self.docs_dir / file_path
+                
+                if not doc_file.exists():
+                    return f"Documentation file {file_path} not found"
+                
+                if not doc_file.suffix == '.txt':
+                    return f"File {file_path} is not a text documentation file"
+                
+                with open(doc_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                if len(lines) > max_lines:
+                    content = ''.join(lines[:max_lines])
+                    content += f"\n\n[Content truncated - showing first {max_lines} lines of {len(lines)} total lines]"
+                else:
+                    content = ''.join(lines)
+                
+                return content
+                
+            except Exception as e:
+                return f"Error reading Python documentation: {str(e)}"
+        
+        @self.mcp.tool()
+        async def search_python_docs(query: str, max_results: int = 10) -> str:
+            """Search through Python documentation for specific content"""
+            try:
+                if not self.docs_dir.exists():
+                    return "Python documentation not available. Try downloading first."
+                
+                query_lower = query.lower()
+                results = []
+                
+                for root, _, files in os.walk(self.docs_dir):
+                    for file in files:
+                        if not file.endswith('.txt'):
+                            continue
+                            
+                        file_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(file_path, self.docs_dir)
+                        
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            # Search for query in content (case insensitive)
+                            if query_lower in content.lower():
+                                # Find context around matches
+                                lines = content.split('\n')
+                                matches = []
+                                
+                                for i, line in enumerate(lines):
+                                    if query_lower in line.lower():
+                                        # Get context lines
+                                        start = max(0, i - 2)
+                                        end = min(len(lines), i + 3)
+                                        context = '\n'.join(lines[start:end])
+                                        matches.append(f"Line {i+1}: {context}")
+                                        
+                                        if len(matches) >= 3:  # Limit matches per file
+                                            break
+                                
+                                if matches:
+                                    results.append({
+                                        'file': rel_path,
+                                        'matches': matches[:3]  # Limit to 3 matches per file
+                                    })
+                                    
+                                    if len(results) >= max_results:
+                                        break
+                        except:
+                            continue
+                
+                if not results:
+                    return f"No matches found for '{query}' in Python documentation"
+                
+                # Format results
+                output = f"Found {len(results)} files containing '{query}':\n\n"
+                for result in results:
+                    output += f"📄 {result['file']}:\n"
+                    for match in result['matches']:
+                        output += f"   {match}\n\n"
+                    output += "-" * 50 + "\n\n"
+                
+                return output
+                
+            except Exception as e:
+                return f"Error searching Python documentation: {str(e)}"
+        
+        @self.mcp.tool()
+        async def get_python_doc_info() -> str:
+            """Get information about the downloaded Python documentation"""
+            try:
+                version_file = self.docs_dir / "version.txt"
+                
+                if not self.docs_dir.exists():
+                    return "Python documentation not downloaded yet"
+                
+                version = "Unknown"
+                if version_file.exists():
+                    try:
+                        version = version_file.read_text().strip()
+                    except:
+                        pass
+                
+                # Count files
+                doc_count = 0
+                total_size = 0
+                for root, _, files in os.walk(self.docs_dir):
+                    for file in files:
+                        if file.endswith('.txt'):
+                            doc_count += 1
+                            file_path = os.path.join(root, file)
+                            try:
+                                total_size += os.path.getsize(file_path)
+                            except:
+                                pass
+                
+                size_mb = total_size / (1024 * 1024)
+                
+                return f"""Python Documentation Info:
+📖 Version: Python {version}
+📁 Location: {self.docs_dir}
+📄 Files: {doc_count} documentation files
+💾 Size: {size_mb:.1f} MB
+🔍 Status: Ready for AI reading and searching"""
+                
+            except Exception as e:
+                return f"Error getting Python documentation info: {str(e)}"
+    
+    async def _get_playwright_page(self, page_id: str):
+        """Helper method to get a Playwright page by ID"""
+        for browser in self.active_browsers.values():
+            if hasattr(browser, '_page_references') and page_id in browser._page_references:
+                return browser._page_references[page_id]
+        return f"Page {page_id} not found"
     
     def _start_stream_server(self, container, container_port: int, host_port: int, stream_key: str):
         """Start a TCP server that streams data from container port to host port"""
@@ -1069,7 +1783,7 @@ class MCPDockerServer:
                 pass
     
     async def cleanup(self):
-        """Clean up containers, streams, and temporary files"""
+        """Clean up containers, streams, browser instances, and temporary files"""
         # Stop all active streams
         self.active_streams.clear()
         
@@ -1080,6 +1794,29 @@ class MCPDockerServer:
                 container.remove()
             except:
                 pass
+        
+        # Close all Playwright browsers
+        for browser in self.active_browsers.values():
+            try:
+                await browser.close()
+            except:
+                pass
+        self.active_browsers.clear()
+        
+        # Close Playwright instance
+        if self.playwright_instance:
+            try:
+                await self.playwright_instance.stop()
+            except:
+                pass
+        
+        # Close all Selenium drivers
+        for driver in self.active_selenium_drivers.values():
+            try:
+                driver.quit()
+            except:
+                pass
+        self.active_selenium_drivers.clear()
         
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
@@ -1108,7 +1845,7 @@ def main():
         print("🚀 NVIDIA GPU support detected and enabled")
     else:
         print("💻 Running in CPU-only mode")
-    if arguments.transport and arguments.server_ui == False:
+    if arguments.transport:
         server.run(transport_method=arguments.transport)
     else:
         server.run(transport_method="stdio")
