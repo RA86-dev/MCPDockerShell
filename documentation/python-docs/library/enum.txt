@@ -184,6 +184,9 @@ class enum.EnumType
    final *enum*, as well as creating the enum members, properly
    handling duplicates, providing iteration over the enum class, etc.
 
+   Added in version 3.11: Before 3.11 "EnumType" was called
+   "EnumMeta", which is still available as an alias.
+
    __call__(cls, value, names=None, *, module=None, qualname=None, type=None, start=1, boundary=None)
 
       This method is called in two different ways:
@@ -235,8 +238,8 @@ class enum.EnumType
          >>> Color.RED.value in Color
          True
 
-   Changed in version 3.12: Before Python 3.12, a "TypeError" is
-   raised if a non-Enum-member is used in a containment check.
+      Changed in version 3.12: Before Python 3.12, a "TypeError" is
+      raised if a non-Enum-member is used in a containment check.
 
    __dir__(cls)
 
@@ -279,21 +282,6 @@ class enum.EnumType
 
          >>> list(reversed(Color))
          [<Color.BLUE: 3>, <Color.GREEN: 2>, <Color.RED: 1>]
-
-   _add_alias_()
-
-      Adds a new name as an alias to an existing member.  Raises a
-      "NameError" if the name is already assigned to a different
-      member.
-
-   _add_value_alias_()
-
-      Adds a new value as an alias to an existing member.  Raises a
-      "ValueError" if the value is already linked with a different
-      member.
-
-   Added in version 3.11: Before 3.11 "EnumType" was called
-   "EnumMeta", which is still available as an alias.
 
 class enum.Enum
 
@@ -510,6 +498,32 @@ class enum.Enum
      starting with "1".
 
    Changed in version 3.12: Added Dataclass support
+
+   _add_alias_()
+
+      Adds a new name as an alias to an existing member:
+
+         >>> Color.RED._add_alias_("ERROR")
+         >>> Color.ERROR
+         <Color.RED: 1>
+
+      Raises a "NameError" if the name is already assigned to a
+      different member.
+
+      Added in version 3.13.
+
+   _add_value_alias_()
+
+      Adds a new value as an alias to an existing member:
+
+         >>> Color.RED._add_value_alias_(42)
+         >>> Color(42)
+         <Color.RED: 1>
+
+      Raises a "ValueError" if the value is already linked with a
+      different member.
+
+      Added in version 3.13.
 
 class enum.IntEnum
 
@@ -922,12 +936,6 @@ Once all the members are created it is no longer used.
 Supported "_sunder_" names
 --------------------------
 
-* "_add_alias_()" -- adds a new name as an alias to an existing
-  member.
-
-* "_add_value_alias_()" -- adds a new value as an alias to an existing
-  member.
-
 * "_name_" -- name of the member
 
 * "_value_" -- value of the member; can be set in "__new__"
@@ -950,6 +958,12 @@ Supported "_sunder_" names
     For standard "Enum" classes the next value chosen is the highest
     value seen incremented by one.For "Flag" classes the next value
     chosen will be the next highest power-of-two.
+
+* "_add_alias_()" -- adds a new name as an alias to an existing
+  member.
+
+* "_add_value_alias_()" -- adds a new value as an alias to an existing
+  member.
 
 * While "_sunder_" names are generally reserved for the further
   development of the "Enum" class and can not be used, some are

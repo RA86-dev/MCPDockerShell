@@ -50,6 +50,10 @@ type PyHash_FuncDef
 
    Hash function definition used by "PyHash_GetFuncDef()".
 
+   Py_hash_t (*const hash)(const void*, Py_ssize_t)
+
+      Hash function.
+
    const char *name
 
       Hash function name (UTF-8 encoded string).

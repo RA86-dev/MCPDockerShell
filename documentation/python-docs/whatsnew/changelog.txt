@@ -8,8 +8,73 @@ Python next
 *Release date: XXXX-XX-XX*
 
 
+Security
+--------
+
+* gh-135661: Fix CDATA section parsing in "html.parser.HTMLParser"
+  according to the HTML5 standard: "] ]>" and "]] >" no longer end the
+  CDATA section. Add private method "_set_support_cdata()" which can
+  be used to specify how to parse "<[CDATA[" --- as a CDATA section in
+  foreign content (SVG or MathML) or as a bogus comment in the HTML
+  namespace.
+
+
 Library
 -------
+
+* gh-134869: Fix an issue where pressing Ctrl+C during tab completion
+  in the REPL would leave the autocompletion menu in a corrupted
+  state.
+
+* gh-123085: In a bare call to "importlib.resources.files()", ensure
+  the caller's frame is properly detected when "importlib.resources"
+  is itself available as a compiled module only (no source).
+
+
+Core and Builtins
+-----------------
+
+* gh-137576: Fix for incorrect source code being shown in tracebacks
+  from the Basic REPL when "PYTHONSTARTUP" is given. Patch by Adam
+  Hartz.
+
+
+C API
+-----
+
+* gh-87135: Attempting to acquire the GIL after runtime finalization
+  has begun in a different thread now causes the thread to hang rather
+  than terminate, which avoids potential crashes or memory corruption
+  caused by attempting to terminate a thread that is running code not
+  specifically designed to support termination. In most cases this
+  hanging is harmless since the process will soon exit anyway.
+
+  While not officially marked deprecated until 3.14,
+  "PyThread_exit_thread" is no longer called internally and remains
+  solely for interface compatibility. Its behavior is inconsistent
+  across platforms, and it can only be used safely in the unlikely
+  case that every function in the entire call stack has been designed
+  to support the platform-dependent termination mechanism.  It is
+  recommended that users of this function change their design to not
+  require thread termination.  In the unlikely case that thread
+  termination is needed and can be done safely, users may migrate to
+  calling platform-specific APIs such as "pthread_exit" (POSIX) or
+  "_endthreadex" (Windows) directly.
+
+
+Python 3.13.7 final
+===================
+
+*Release date: 2025-08-14*
+
+
+Library
+-------
+
+* gh-137583: Fix a deadlock introduced in 3.13.6 when a call to
+  "ssl.SSLSocket.recv" was blocked in one thread, and then another
+  method on the object (such as "ssl.SSLSocket.send") was subsequently
+  called in another thread.
 
 * gh-137044: Return large limit values as positive integers instead of
   negative integers in "resource.getrlimit()". Accept large values and
@@ -19,12 +84,25 @@ Library
 * gh-136914: Fix retrieval of "doctest.DocTest.lineno" for objects
   decorated with "functools.cache()" or "functools.cached_property".
 
+* gh-131788: Make "ResourceTracker.send" from "multiprocessing" re-
+  entrant safe
+
 
 Documentation
 -------------
 
 * gh-136155: We are now checking for fatal errors in EPUB builds in
   CI.
+
+
+Core and Builtins
+-----------------
+
+* gh-137400: Fix a crash in the *free threading* build when disabling
+  profiling or tracing across all threads with
+  "PyEval_SetProfileAllThreads()" or "PyEval_SetTraceAllThreads()" or
+  their Python equivalents "threading.settrace_all_threads()" and
+  "threading.setprofile_all_threads()".
 
 
 Python 3.13.6 final

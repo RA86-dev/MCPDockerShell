@@ -268,6 +268,11 @@ class asyncio.StreamWriter
          stream.write(data)
          await stream.drain()
 
+      Note:
+
+        The *data* buffer should be a C contiguous one-dimensional
+        *bytes-like object*.
+
    writelines(data)
 
       The method writes a list (or any iterable) of bytes to the

@@ -1110,9 +1110,9 @@ map(function, iterable, *iterables)
    is exhausted.  For cases where the function inputs are already
    arranged into argument tuples, see "itertools.starmap()".
 
-max(iterable, *, key=None)
-max(iterable, *, default, key=None)
-max(arg1, arg2, *args, key=None)
+max(iterable, /, *, key=None)
+max(iterable, /, *, default, key=None)
+max(arg1, arg2, /, *args, key=None)
 
    Return the largest item in an iterable or the largest of two or
    more arguments.
@@ -1142,9 +1142,9 @@ class memoryview(object)
    Return a "memory view" object created from the given argument.  See
    Memory Views for more information.
 
-min(iterable, *, key=None)
-min(iterable, *, default, key=None)
-min(arg1, arg2, *args, key=None)
+min(iterable, /, *, key=None)
+min(iterable, /, *, default, key=None)
+min(arg1, arg2, /, *args, key=None)
 
    Return the smallest item in an iterable or the smallest of two or
    more arguments.
@@ -1434,12 +1434,18 @@ open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, clo
 
    Changed in version 3.11: The "'U'" mode has been removed.
 
-ord(c)
+ord(character, /)
 
-   Given a string representing one Unicode character, return an
-   integer representing the Unicode code point of that character.  For
-   example, "ord('a')" returns the integer "97" and "ord('€')" (Euro
-   sign) returns "8364".  This is the inverse of "chr()".
+   Return the ordinal value of a character.
+
+   If the argument is a one-character string, return the Unicode code
+   point of that character.  For example, "ord('a')" returns the
+   integer "97" and "ord('€')" (Euro sign) returns "8364".  This is
+   the inverse of "chr()".
+
+   If the argument is a "bytes" or "bytearray" object of length 1,
+   return its single byte value. For example, "ord(b'a')" returns the
+   integer "97".
 
 pow(base, exp, mod=None)
 
@@ -1596,8 +1602,8 @@ class property(fget=None, fset=None, fdel=None, doc=None)
 
       Added in version 3.13.
 
-class range(stop)
-class range(start, stop, step=1)
+class range(stop, /)
+class range(start, stop, step=1, /)
 
    Rather than being a function, "range" is actually an immutable
    sequence type, as documented in Ranges and Sequence Types --- list,

@@ -535,7 +535,7 @@ class decimal.Decimal(value='0', context=None)
       >>> Decimal(321).exp()
       Decimal('2.561702493119680037517373933E+139')
 
-   classmethod from_float(f)
+   classmethod from_float(f, /)
 
       Alternative constructor that only accepts instances of "float"
       or "int".
@@ -961,7 +961,7 @@ decimal.getcontext()
 
    Return the current context for the active thread.
 
-decimal.setcontext(c)
+decimal.setcontext(c, /)
 
    Set the current context for the active thread to *c*.
 
@@ -1131,11 +1131,11 @@ class decimal.Context(prec=None, rounding=None, Emin=None, Emax=None, capitals=N
 
       Return a duplicate of the context.
 
-   copy_decimal(num)
+   copy_decimal(num, /)
 
       Return a copy of the Decimal instance num.
 
-   create_decimal(num)
+   create_decimal(num='0', /)
 
       Creates a new Decimal instance from *num* but using *self* as
       context. Unlike the "Decimal" constructor, the context
@@ -1159,7 +1159,7 @@ class decimal.Context(prec=None, rounding=None, Emin=None, Emax=None, capitals=N
       specification. If the argument is a string, no leading or
       trailing whitespace or underscores are permitted.
 
-   create_decimal_from_float(f)
+   create_decimal_from_float(f, /)
 
       Creates a new Decimal instance from a float *f* but rounding
       using *self* as the context.  Unlike the "Decimal.from_float()"
@@ -1194,186 +1194,186 @@ class decimal.Context(prec=None, rounding=None, Emin=None, Emax=None, capitals=N
    specific context.  The methods are similar to those for the
    "Decimal" class and are only briefly recounted here.
 
-   abs(x)
+   abs(x, /)
 
       Returns the absolute value of *x*.
 
-   add(x, y)
+   add(x, y, /)
 
       Return the sum of *x* and *y*.
 
-   canonical(x)
+   canonical(x, /)
 
       Returns the same Decimal object *x*.
 
-   compare(x, y)
+   compare(x, y, /)
 
       Compares *x* and *y* numerically.
 
-   compare_signal(x, y)
+   compare_signal(x, y, /)
 
       Compares the values of the two operands numerically.
 
-   compare_total(x, y)
+   compare_total(x, y, /)
 
       Compares two operands using their abstract representation.
 
-   compare_total_mag(x, y)
+   compare_total_mag(x, y, /)
 
       Compares two operands using their abstract representation,
       ignoring sign.
 
-   copy_abs(x)
+   copy_abs(x, /)
 
       Returns a copy of *x* with the sign set to 0.
 
-   copy_negate(x)
+   copy_negate(x, /)
 
       Returns a copy of *x* with the sign inverted.
 
-   copy_sign(x, y)
+   copy_sign(x, y, /)
 
       Copies the sign from *y* to *x*.
 
-   divide(x, y)
+   divide(x, y, /)
 
       Return *x* divided by *y*.
 
-   divide_int(x, y)
+   divide_int(x, y, /)
 
       Return *x* divided by *y*, truncated to an integer.
 
-   divmod(x, y)
+   divmod(x, y, /)
 
       Divides two numbers and returns the integer part of the result.
 
-   exp(x)
+   exp(x, /)
 
       Returns "e ** x".
 
-   fma(x, y, z)
+   fma(x, y, z, /)
 
       Returns *x* multiplied by *y*, plus *z*.
 
-   is_canonical(x)
+   is_canonical(x, /)
 
       Returns "True" if *x* is canonical; otherwise returns "False".
 
-   is_finite(x)
+   is_finite(x, /)
 
       Returns "True" if *x* is finite; otherwise returns "False".
 
-   is_infinite(x)
+   is_infinite(x, /)
 
       Returns "True" if *x* is infinite; otherwise returns "False".
 
-   is_nan(x)
+   is_nan(x, /)
 
       Returns "True" if *x* is a qNaN or sNaN; otherwise returns
       "False".
 
-   is_normal(x)
+   is_normal(x, /)
 
       Returns "True" if *x* is a normal number; otherwise returns
       "False".
 
-   is_qnan(x)
+   is_qnan(x, /)
 
       Returns "True" if *x* is a quiet NaN; otherwise returns "False".
 
-   is_signed(x)
+   is_signed(x, /)
 
       Returns "True" if *x* is negative; otherwise returns "False".
 
-   is_snan(x)
+   is_snan(x, /)
 
       Returns "True" if *x* is a signaling NaN; otherwise returns
       "False".
 
-   is_subnormal(x)
+   is_subnormal(x, /)
 
       Returns "True" if *x* is subnormal; otherwise returns "False".
 
-   is_zero(x)
+   is_zero(x, /)
 
       Returns "True" if *x* is a zero; otherwise returns "False".
 
-   ln(x)
+   ln(x, /)
 
       Returns the natural (base e) logarithm of *x*.
 
-   log10(x)
+   log10(x, /)
 
       Returns the base 10 logarithm of *x*.
 
-   logb(x)
+   logb(x, /)
 
       Returns the exponent of the magnitude of the operand's MSD.
 
-   logical_and(x, y)
+   logical_and(x, y, /)
 
       Applies the logical operation *and* between each operand's
       digits.
 
-   logical_invert(x)
+   logical_invert(x, /)
 
       Invert all the digits in *x*.
 
-   logical_or(x, y)
+   logical_or(x, y, /)
 
       Applies the logical operation *or* between each operand's
       digits.
 
-   logical_xor(x, y)
+   logical_xor(x, y, /)
 
       Applies the logical operation *xor* between each operand's
       digits.
 
-   max(x, y)
+   max(x, y, /)
 
       Compares two values numerically and returns the maximum.
 
-   max_mag(x, y)
+   max_mag(x, y, /)
 
       Compares the values numerically with their sign ignored.
 
-   min(x, y)
+   min(x, y, /)
 
       Compares two values numerically and returns the minimum.
 
-   min_mag(x, y)
+   min_mag(x, y, /)
 
       Compares the values numerically with their sign ignored.
 
-   minus(x)
+   minus(x, /)
 
       Minus corresponds to the unary prefix minus operator in Python.
 
-   multiply(x, y)
+   multiply(x, y, /)
 
       Return the product of *x* and *y*.
 
-   next_minus(x)
+   next_minus(x, /)
 
       Returns the largest representable number smaller than *x*.
 
-   next_plus(x)
+   next_plus(x, /)
 
       Returns the smallest representable number larger than *x*.
 
-   next_toward(x, y)
+   next_toward(x, y, /)
 
       Returns the number closest to *x*, in direction towards *y*.
 
-   normalize(x)
+   normalize(x, /)
 
       Reduces *x* to its simplest form.
 
-   number_class(x)
+   number_class(x, /)
 
       Returns an indication of the class of *x*.
 
-   plus(x)
+   plus(x, /)
 
       Plus corresponds to the unary prefix plus operator in Python.
       This operation applies the context precision and rounding, so it
@@ -1417,7 +1417,7 @@ class decimal.Context(prec=None, rounding=None, Emin=None, Emax=None, capitals=N
       the exponents of "x", "y" and "modulo".  The result is always
       exact.
 
-   quantize(x, y)
+   quantize(x, y, /)
 
       Returns a value equal to *x* (rounded), having the exponent of
       *y*.
@@ -1426,44 +1426,44 @@ class decimal.Context(prec=None, rounding=None, Emin=None, Emax=None, capitals=N
 
       Just returns 10, as this is Decimal, :)
 
-   remainder(x, y)
+   remainder(x, y, /)
 
       Returns the remainder from integer division.
 
       The sign of the result, if non-zero, is the same as that of the
       original dividend.
 
-   remainder_near(x, y)
+   remainder_near(x, y, /)
 
       Returns "x - y * n", where *n* is the integer nearest the exact
       value of "x / y" (if the result is 0 then its sign will be the
       sign of *x*).
 
-   rotate(x, y)
+   rotate(x, y, /)
 
       Returns a rotated copy of *x*, *y* times.
 
-   same_quantum(x, y)
+   same_quantum(x, y, /)
 
       Returns "True" if the two operands have the same exponent.
 
-   scaleb(x, y)
+   scaleb(x, y, /)
 
       Returns the first operand after adding the second value its exp.
 
-   shift(x, y)
+   shift(x, y, /)
 
       Returns a shifted copy of *x*, *y* times.
 
-   sqrt(x)
+   sqrt(x, /)
 
       Square root of a non-negative number to context precision.
 
-   subtract(x, y)
+   subtract(x, y, /)
 
       Return the difference between *x* and *y*.
 
-   to_eng_string(x)
+   to_eng_string(x, /)
 
       Convert to a string, using engineering notation if an exponent
       is needed.
@@ -1473,11 +1473,11 @@ class decimal.Context(prec=None, rounding=None, Emin=None, Emax=None, capitals=N
       and may require the addition of either one or two trailing
       zeros.
 
-   to_integral_exact(x)
+   to_integral_exact(x, /)
 
       Rounds to an integer.
 
-   to_sci_string(x)
+   to_sci_string(x, /)
 
       Converts a number to a string using scientific notation.
 

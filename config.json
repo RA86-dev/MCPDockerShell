@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "Central-docker-server": {
-      "command": "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
-      "args": ["/Users/richardwang/Documents/GitHub/MCPDocker/main.py"],
-      "cwd": "/Users/richardwang/Documents/GitHub/MCPDocker/"
-    }
-  }
-}

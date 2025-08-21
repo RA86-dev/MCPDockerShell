@@ -258,7 +258,7 @@ available from the Python Package Index.
 
   * "ctypes" --- A foreign function library for Python
 
-* Command Line Interface Libraries
+* Command-line interface libraries
 
   * "argparse" --- Parser for command-line options, arguments and
     subcommands
@@ -276,6 +276,8 @@ available from the Python Package Index.
   * "curses.ascii" --- Utilities for ASCII characters
 
   * "curses.panel" --- A panel stack extension for curses
+
+  * "cmd" --- Support for line-oriented command interpreters
 
 * Concurrent Execution
 
@@ -420,15 +422,7 @@ available from the Python Package Index.
 
   * "locale" --- Internationalization services
 
-* Program Frameworks
-
-  * "turtle" --- Turtle graphics
-
-  * "cmd" --- Support for line-oriented command interpreters
-
-  * "shlex" --- Simple lexical analysis
-
-* Graphical User Interfaces with Tk
+* Graphical user interfaces with Tk
 
   * "tkinter" --- Python interface to Tcl/Tk
 
@@ -447,6 +441,8 @@ available from the Python Package Index.
   * "tkinter.ttk" --- Tk themed widgets
 
   * IDLE --- Python editor and shell
+
+  * "turtle" --- Turtle graphics
 
 * Development Tools
 
@@ -602,7 +598,9 @@ available from the Python Package Index.
 
   * "winsound" --- Sound-playing interface for Windows
 
-* Unix Specific Services
+* Unix-specific services
+
+  * "shlex" --- Simple lexical analysis
 
   * "posix" --- The most common POSIX system calls
 

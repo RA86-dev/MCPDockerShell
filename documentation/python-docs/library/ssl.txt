@@ -1833,8 +1833,8 @@ SSLContext.wrap_socket(sock, server_side=False, do_handshake_on_connect=True, su
 SSLContext.sslsocket_class
 
    The return type of "SSLContext.wrap_socket()", defaults to
-   "SSLSocket". The attribute can be overridden on instance of class
-   in order to return a custom subclass of "SSLSocket".
+   "SSLSocket". The attribute can be assigned to on instances of
+   "SSLContext" in order to return a custom subclass of "SSLSocket".
 
    Added in version 3.7.
 

@@ -2876,9 +2876,21 @@ Python Documentation contents
 
     * Python next
 
+      * Security
+
+      * Library
+
+      * Core and Builtins
+
+      * C API
+
+    * Python 3.13.7 final
+
       * Library
 
       * Documentation
+
+      * Core and Builtins
 
     * Python 3.13.6 final
 
@@ -7077,7 +7089,7 @@ Python Documentation contents
 
         * Arrays and pointers
 
-  * Command Line Interface Libraries
+  * Command-line interface libraries
 
     * "argparse" --- Parser for command-line options, arguments and
       subcommands
@@ -7317,6 +7329,12 @@ Python Documentation contents
       * Functions
 
       * Panel Objects
+
+    * "cmd" --- Support for line-oriented command interpreters
+
+      * Cmd Objects
+
+      * Cmd Example
 
   * Concurrent Execution
 
@@ -8491,123 +8509,13 @@ Python Documentation contents
 
       * Background, details, hints, tips and caveats
 
+      * Locale names
+
       * For extension writers and programs that embed Python
 
       * Access to message catalogs
 
-  * Program Frameworks
-
-    * "turtle" --- Turtle graphics
-
-      * Introduction
-
-      * Get started
-
-      * Tutorial
-
-        * Starting a turtle environment
-
-        * Basic drawing
-
-          * Pen control
-
-          * The turtle's position
-
-        * Making algorithmic patterns
-
-      * How to...
-
-        * Get started as quickly as possible
-
-        * Use the "turtle" module namespace
-
-        * Use turtle graphics in a script
-
-        * Use object-oriented turtle graphics
-
-      * Turtle graphics reference
-
-        * Turtle methods
-
-        * Methods of TurtleScreen/Screen
-
-      * Methods of RawTurtle/Turtle and corresponding functions
-
-        * Turtle motion
-
-        * Tell Turtle's state
-
-        * Settings for measurement
-
-        * Pen control
-
-          * Drawing state
-
-          * Color control
-
-          * Filling
-
-          * More drawing control
-
-        * Turtle state
-
-          * Visibility
-
-          * Appearance
-
-        * Using events
-
-        * Special Turtle methods
-
-        * Compound shapes
-
-      * Methods of TurtleScreen/Screen and corresponding functions
-
-        * Window control
-
-        * Animation control
-
-        * Using screen events
-
-        * Input methods
-
-        * Settings and special methods
-
-        * Methods specific to Screen, not inherited from TurtleScreen
-
-      * Public classes
-
-      * Explanation
-
-      * Help and configuration
-
-        * How to use help
-
-        * Translation of docstrings into different languages
-
-        * How to configure Screen and Turtles
-
-      * "turtledemo" --- Demo scripts
-
-      * Changes since Python 2.6
-
-      * Changes since Python 3.0
-
-    * "cmd" --- Support for line-oriented command interpreters
-
-      * Cmd Objects
-
-      * Cmd Example
-
-    * "shlex" --- Simple lexical analysis
-
-      * shlex Objects
-
-      * Parsing Rules
-
-      * Improved Compatibility with Shells
-
-  * Graphical User Interfaces with Tk
+  * Graphical user interfaces with Tk
 
     * "tkinter" --- Python interface to Tcl/Tk
 
@@ -8822,6 +8730,102 @@ Python Documentation contents
         * Extensions
 
       * idlelib --- implementation of IDLE application
+
+    * "turtle" --- Turtle graphics
+
+      * Introduction
+
+      * Get started
+
+      * Tutorial
+
+        * Starting a turtle environment
+
+        * Basic drawing
+
+          * Pen control
+
+          * The turtle's position
+
+        * Making algorithmic patterns
+
+      * How to...
+
+        * Get started as quickly as possible
+
+        * Use the "turtle" module namespace
+
+        * Use turtle graphics in a script
+
+        * Use object-oriented turtle graphics
+
+      * Turtle graphics reference
+
+        * Turtle methods
+
+        * Methods of TurtleScreen/Screen
+
+      * Methods of RawTurtle/Turtle and corresponding functions
+
+        * Turtle motion
+
+        * Tell Turtle's state
+
+        * Settings for measurement
+
+        * Pen control
+
+          * Drawing state
+
+          * Color control
+
+          * Filling
+
+          * More drawing control
+
+        * Turtle state
+
+          * Visibility
+
+          * Appearance
+
+        * Using events
+
+        * Special Turtle methods
+
+        * Compound shapes
+
+      * Methods of TurtleScreen/Screen and corresponding functions
+
+        * Window control
+
+        * Animation control
+
+        * Using screen events
+
+        * Input methods
+
+        * Settings and special methods
+
+        * Methods specific to Screen, not inherited from TurtleScreen
+
+      * Public classes
+
+      * Explanation
+
+      * Help and configuration
+
+        * How to use help
+
+        * Translation of docstrings into different languages
+
+        * How to configure Screen and Turtles
+
+      * "turtledemo" --- Demo scripts
+
+      * Changes since Python 2.6
+
+      * Changes since Python 3.0
 
   * Development Tools
 
@@ -9697,7 +9701,15 @@ Python Documentation contents
 
     * "winsound" --- Sound-playing interface for Windows
 
-  * Unix Specific Services
+  * Unix-specific services
+
+    * "shlex" --- Simple lexical analysis
+
+      * shlex Objects
+
+      * Parsing Rules
+
+      * Improved Compatibility with Shells
 
     * "posix" --- The most common POSIX system calls
 
@@ -10196,6 +10208,8 @@ Python Documentation contents
       * Non-Python created threads
 
       * Cautions about fork()
+
+      * Cautions regarding runtime finalization
 
       * High-level API
 

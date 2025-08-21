@@ -148,8 +148,8 @@ class asyncio.Event
 
       Clear (unset) the event.
 
-      Tasks awaiting on "wait()" will now block until the "set()"
-      method is called again.
+      Subsequent tasks awaiting on "wait()" will now block until the
+      "set()" method is called again.
 
    is_set()
 

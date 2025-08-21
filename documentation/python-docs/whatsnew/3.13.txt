@@ -770,9 +770,9 @@ dbm
   and make it the default "dbm" backend. (Contributed by Raymond
   Hettinger and Erlend E. Aasland in gh-100414.)
 
-* Allow removing all items from the database through the new
-  "gdbm.clear()" and "ndbm.clear()" methods. (Contributed by Donghee
-  Na in gh-107122.)
+* Allow removing all items from the database through the new "clear()"
+  methods of the GDBM and NDBM database objects. (Contributed by
+  Donghee Na in gh-107122.)
 
 
 dis

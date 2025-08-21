@@ -1,4 +1,4 @@
-Command Line Interface Libraries
+Command-line interface libraries
 ********************************
 
 The modules described in this chapter assist with implementing command
@@ -22,3 +22,5 @@ Here's an overview:
 * "curses.ascii" --- Utilities for ASCII characters
 
 * "curses.panel" --- A panel stack extension for curses
+
+* "cmd" --- Support for line-oriented command interpreters

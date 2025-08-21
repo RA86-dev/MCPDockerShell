@@ -776,6 +776,8 @@ changes to Python for the current version.
 
   * Python next
 
+  * Python 3.13.7 final
+
   * Python 3.13.6 final
 
   * Python 3.13.5 final
