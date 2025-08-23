@@ -45,7 +45,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import webbrowser
 import sys
 from dataclasses import dataclass
-import weakref
 from enum import Enum
 from cachetools import TTLCache
 import os
@@ -196,7 +195,7 @@ class MCPDockerServer:
         self._init_rate_limiting()
 
         # Core storage
-        self.active_containers = weakref.WeakValueDictionary()
+        self.active_containers = {}
         self.active_streams = {}
         self.active_sessions = {}
         self.temp_dir = tempfile.mkdtemp(prefix="mcpdocker_enhanced_")
@@ -553,7 +552,10 @@ class MCPDockerServer:
             return False
 
     def _find_container(self, container_id: str):
-        """Find container by full ID or partial ID match"""
+        """Find container by full ID, partial ID, or name match"""
+        # First sync our active containers with Docker's current state
+        self._sync_containers()
+        
         # Try exact match first
         if container_id in self.active_containers:
             return self.active_containers[container_id]
@@ -563,7 +565,42 @@ class MCPDockerServer:
             if full_id.startswith(container_id):
                 return container
 
+        # Try to find by name in our tracked containers
+        for full_id, container in self.active_containers.items():
+            try:
+                if container.name == container_id:
+                    return container
+            except:
+                pass
+
+        # Try to find by name or direct Docker API lookup
+        try:
+            container = self.docker_client.containers.get(container_id)
+            # Add to our tracking
+            self.active_containers[container.id] = container
+            return container
+        except docker.errors.NotFound:
+            pass
+
         return None
+    
+    def _sync_containers(self):
+        """Sync active_containers with actual Docker containers"""
+        try:
+            # Get all containers from Docker
+            docker_containers = self.docker_client.containers.list(all=True)
+            
+            # Create new tracking dict without clearing the existing one first
+            new_active_containers = {}
+            for container in docker_containers:
+                new_active_containers[container.id] = container
+            
+            # Only update after we have the new data ready
+            self.active_containers = new_active_containers
+                
+        except Exception as e:
+            # If sync fails, keep existing tracking
+            pass
 
     def _run_docker_scout_command(self, command: List[str]) -> str:
         """Run a Docker Scout command and return the output"""
@@ -685,6 +722,16 @@ class MCPDockerServer:
                     return "GPU requested but NVIDIA GPU support is not available"
 
                 container_name = name or f"mcpdocker_{len(self.active_containers)}"
+                
+                # Check if container with this name already exists and remove it
+                if container_name:
+                    try:
+                        existing_container = self.docker_client.containers.get(container_name)
+                        existing_container.stop()
+                        existing_container.remove()
+                    except docker.errors.NotFound:
+                        # Container doesn't exist, which is what we want
+                        pass
 
                 # Create volume mount for file sharing
                 volumes = {self.temp_dir: {"bind": "/workspace", "mode": "rw"}}
@@ -726,11 +773,17 @@ class MCPDockerServer:
             try:
                 container = self._find_container(container_id)
                 if not container:
-                    return f"Container {container_id} not found"
+                    return f"Container {container_id} not found. Available containers: {list(self.active_containers.keys())}"
 
-                result = container.exec_run(command)
+                # Ensure container is running
+                container.reload()
+                if container.status != 'running':
+                    return f"Container {container_id} is not running (status: {container.status})"
 
-                return f"Exit code: {result.exit_code}\nOutput:\n{result.output.decode('utf-8')}"
+                result = container.exec_run(command, tty=True)
+
+                output = result.output.decode('utf-8') if result.output else ""
+                return f"Exit code: {result.exit_code}\nOutput:\n{output}"
 
             except Exception as e:
                 return f"Error executing command: {str(e)}"
@@ -828,17 +881,23 @@ class MCPDockerServer:
         @self.mcp.tool()
         async def list_containers() -> List[str]:
             """List all active containers"""
-            containers = []
-            for container_id, container in self.active_containers.items():
-                try:
-                    container.reload()
-                    status = container.status
-                    name = container.name
-                    containers.append(f"{name} ({container_id[:12]}) - {status}")
-                except:
-                    containers.append(f"Container {container_id[:12]} - unknown status")
+            try:
+                # Sync with Docker to get current state
+                self._sync_containers()
+                
+                containers = []
+                for container_id, container in self.active_containers.items():
+                    try:
+                        container.reload()
+                        status = container.status
+                        name = container.name
+                        containers.append(f"{name} ({container_id[:12]}) - {status}")
+                    except Exception as e:
+                        containers.append(f"Container {container_id[:12]} - error: {str(e)}")
 
-            return containers if containers else ["No active containers"]
+                return containers if containers else ["No active containers"]
+            except Exception as e:
+                return [f"Error listing containers: {str(e)}"]
 
         @self.mcp.tool()
         async def upload_file(filename: str, content: str) -> str:
@@ -878,11 +937,14 @@ class MCPDockerServer:
             try:
                 container = self._find_container(container_id)
                 if not container:
-                    return f"Container {container_id} not found"
+                    return f"Container {container_id} not found. Available containers: {list(self.active_containers.keys())}"
+
+                container.reload()
+                if container.status != 'running':
+                    return f"Container {container_id[:12]} is already stopped (status: {container.status})"
 
                 container.stop()
-
-                return f"Container {container_id[:12]} stopped"
+                return f"Container {container_id[:12]} stopped successfully"
 
             except Exception as e:
                 return f"Error stopping container: {str(e)}"
@@ -893,11 +955,14 @@ class MCPDockerServer:
             try:
                 container = self._find_container(container_id)
                 if not container:
-                    return f"Container {container_id} not found"
+                    return f"Container {container_id} not found. Available containers: {list(self.active_containers.keys())}"
+
+                container.reload()
+                if container.status == 'running':
+                    return f"Container {container_id[:12]} is already running"
 
                 container.start()
-
-                return f"Container {container_id[:12]} started"
+                return f"Container {container_id[:12]} started successfully"
 
             except Exception as e:
                 return f"Error starting container: {str(e)}"
@@ -908,11 +973,10 @@ class MCPDockerServer:
             try:
                 container = self._find_container(container_id)
                 if not container:
-                    return f"Container {container_id} not found"
+                    return f"Container {container_id} not found. Available containers: {list(self.active_containers.keys())}"
 
                 container.restart()
-
-                return f"Container {container_id[:12]} restarted"
+                return f"Container {container_id[:12]} restarted successfully"
 
             except Exception as e:
                 return f"Error restarting container: {str(e)}"
@@ -923,21 +987,21 @@ class MCPDockerServer:
             try:
                 container = self._find_container(container_id)
                 if not container:
-                    return f"Container {container_id} not found"
+                    return f"Container {container_id} not found. Available containers: {list(self.active_containers.keys())}"
 
-                # Find the full container ID to remove from our tracking
-                full_id = None
-                for fid, cont in self.active_containers.items():
-                    if cont == container:
-                        full_id = fid
-                        break
-
-                container.stop()
+                # Stop container if running
+                container.reload()
+                if container.status == 'running':
+                    container.stop()
+                
+                # Remove container
                 container.remove()
-                if full_id:
-                    del self.active_containers[full_id]
+                
+                # Remove from our tracking
+                if container.id in self.active_containers:
+                    del self.active_containers[container.id]
 
-                return f"Container {container_id[:12]} stopped and deleted"
+                return f"Container {container_id[:12]} stopped and deleted successfully"
 
             except Exception as e:
                 return f"Error deleting container: {str(e)}"
