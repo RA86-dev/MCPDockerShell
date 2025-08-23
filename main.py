@@ -1,11 +1,11 @@
+
 """
 Name: MCPDevServer
 Date: Sunday, August 17th, 2025 14:32
-
-
 """
-
+from fastapi import FastAPI,Request
 import docker
+import tempfile
 import os
 import tempfile
 import argparse
@@ -14,7 +14,8 @@ import subprocess
 import tarfile
 import io
 import socket
-import requests
+import requests 
+import fastapi
 import threading
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -37,38 +38,20 @@ import zipfile
 import psutil
 import logging
 from logging.handlers import RotatingFileHandler
-import yaml
 from datetime import datetime, timedelta
-import aiofiles
-import tarfile as tar
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
-import configparser
-import csv
-from fastapi import FastAPI, Request, HTTPException, Depends, status
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse
 import webbrowser
-import asyncio
-import signal
 import sys
-from contextlib import asynccontextmanager
-import traceback
-import re
-from typing_extensions import Annotated
 from dataclasses import dataclass
 import weakref
 from enum import Enum
-import base64
-from urllib.parse import quote, unquote
-import mimetypes
 from cachetools import TTLCache
-import jwt
 import os
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
+
+uptime_launched = datetime.now()
 
 # Optional imports for enhanced features
 try:
@@ -180,6 +163,7 @@ class HealthStatus(BaseModel):
     version: str = "2.0.0-enhanced"
 
 
+
 class MCPDockerServer:
     def __init__(self, service_config: ServiceConfig = None):
         self.service_config = service_config or ServiceConfig()
@@ -251,8 +235,6 @@ class MCPDockerServer:
         if self._get_config("websocket_enabled", False):
             self._init_websocket_manager()
 
-        # Initialize enhanced documentation system
-        self._ensure_multi_language_docs()
 
         # Initialize health checks
         if self._get_config("health_checks_enabled", True):
@@ -626,7 +608,6 @@ class MCPDockerServer:
                 "ticker_info": TICKER.info,
                 "ticker_history_1m": TICKER.history(period="1mo"),
             }
-
         @self.mcp.tool()
         async def mcp_geocoding_api(city_query: str, count: int = 10):
             """
@@ -753,6 +734,14 @@ class MCPDockerServer:
 
             except Exception as e:
                 return f"Error executing command: {str(e)}"
+        @self.mcp.tool()
+        def check_for_errors_python(code: str):
+            with tempfile.NamedTemporaryFile(mode='w', delete=True) as temporary_file:
+                temporary_file.write(code)
+                abs_path = os.path.abspath(temporary_file.name)
+                data = subprocess.check_output(["ty","check",abs_path])
+            return data
+        
 
         @self.mcp.tool()
         def wiki_search(query: str, limit: int = 5) -> list:
@@ -1714,6 +1703,7 @@ class MCPDockerServer:
                         "stream_key": stream_key,
                         "message": f"Started streaming logs for container {container_id[:12]}",
                         "streaming": True,
+
                     }
                 )
 

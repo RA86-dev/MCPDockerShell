@@ -13,7 +13,7 @@ services:
       - devdocs
     environment:
       - DEVDOCS_URL=http://devdocs:9292
-  
+
   devdocs:
     image: ghcr.io/freecodecamp/devdocs:latest-alpine
     container_name: devdocs
@@ -21,6 +21,21 @@ services:
       - "9292:9292"
     networks:
       - mcp-network
+    volumes:
+      - devdocs-data:/app/.devdocs
+
+  auto-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    container_name: devdocs-sync
+    volumes:
+      - devdocs-data:/app/.devdocs
+    networks:
+      - mcp-network
+
+volumes:
+  devdocs-data:
 
 networks:
   mcp-network:

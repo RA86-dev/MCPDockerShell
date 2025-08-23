@@ -1,8 +1,0 @@
-2025-08-19 20:54:24,744 - MCPDockerEnhanced - INFO - main:2533 - Enhanced logging system initialized with rotation and structured logging
-2025-08-19 20:54:24,772 - MCPDockerEnhanced - INFO - main:377 - Docker client initialized successfully
-2025-08-19 20:54:24,774 - MCPDockerEnhanced - INFO - main:399 - Caching system initialized
-2025-08-19 20:54:24,774 - MCPDockerEnhanced - INFO - main:405 - Rate limiting initialized
-2025-08-19 20:54:24,785 - MCPDockerEnhanced - INFO - main:2685 - Enhanced database initialized successfully with optimizations
-2025-08-19 20:54:24,786 - MCPDockerEnhanced - INFO - main:412 - WebSocket manager initialized
-2025-08-19 20:55:18,541 - MCPDockerEnhanced - INFO - main:425 - Health checks initialized
-2025-08-19 20:55:18,542 - MCPDockerEnhanced - INFO - main:441 - Auto-cleanup system started

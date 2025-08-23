@@ -10,6 +10,7 @@ ARG PYTHON_VERSION=3.11.9
 FROM python:${PYTHON_VERSION}-slim as base
 LABEL version="1.2.5"
 LABEL description="A large developer focused MCP server for running with AI more easily."
+LABEL author='RA86-dev'
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -31,7 +32,6 @@ RUN playwright install
 COPY . .
 
 # Expose the port that the application listens on.
-EXPOSE 8000
-
+EXPOSE 8000 8001
 # Run the application.
 CMD python3 main.py --transport sse
