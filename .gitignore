@@ -3,9 +3,9 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+.ropeproject/
 wheels/
 *.egg-info
 # Virtual environments
 .venv
 .git
-python-documentation/

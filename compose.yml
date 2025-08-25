@@ -1,0 +1,92 @@
+################################
+# MCP Docker Developer Server
+# Supported GPUS: AMD and NVIDIA GPU supported, Intel Not supported.
+# This services creates the server
+# NOTE: PLEASE CHECK FOR FEATURES YOU WANT
+#################################
+# Learn more in Documentation
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    ports:
+      - 8888:8080
+    networks:
+      - mcp-network
+    volumes:
+      - ./config:/etc/searxng/
+      - ./data:/var/cache/searxng/
+  devdocs:
+    image: ghcr.io/freecodecamp/devdocs:latest-alpine
+    container_name: devdocs
+    ports:
+      - 9292:9292
+    networks:
+      - mcp-network
+    volumes:
+      - devdocs-data:/app/.devdocs
+  auto-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    container_name: devdocs-sync
+    volumes:
+      - devdocs-data:/app/.devdocs
+    networks:
+      - mcp-network
+  mcp-server:
+    build:
+      context: .
+    privileged: true
+    ports:
+      - 8000:8000
+    # --- GPU support [NVIDIA] Uncomment this section out if you want these features ---
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all # (change this to the amount you want.)
+    #           capabilities: [gpu]
+    # --- GPU support [AMD] ---
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: rocm
+    #           count: all # or a seperate amount
+    #           capabilities: [gpu]
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # giving access to Docker Socket
+    networks:
+      - mcp-network
+    depends_on:
+      - devdocs
+      - searxng
+      - firecrawl
+    environment:
+      - DEVDOCS_URL=http://devdocs:9292
+      - SEARXNG_URL=http://searxng:8888
+      # --- Firecrawl [Local] ---
+      # - FIRECRAWL_URL=http://firecrawl:3002
+      # - ENABLE_FIRECRAWL=true
+      # --- Firecrawl [API] ---
+      # - ENABLE_FIRECRAWL=true
+      # - FIRECRAWL_API_KEY=<API_KEY_HERE>
+      # Comment ENABLE_FIRECRAWL=false out if you are using the top two Firecrawl subfeatures
+      - ENABLE_FIRECRAWL=false
+
+  redis:
+    image: redis:alpine
+    volumes:
+      - redis-data:/data
+    networks:
+      - mcp-network
+volumes:
+  devdocs-data:
+
+  redis-data:
+
+networks:
+  mcp-network:
+    driver: bridge

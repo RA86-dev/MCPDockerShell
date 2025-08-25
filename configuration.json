@@ -1,11 +1,11 @@
 {
     "mcpServers": {
-        "docker-mcp": {
+        "mcp-developer-server": {
             "command": "npx",
             "args": [
                 "-y",
                 "mcp-remote",
-                "http://127.0.0.1:8000/sse",
+                "http://127.0.0.1:8000/sse", 
                 "--transport",
                 "sse",
                 "--allow-http"

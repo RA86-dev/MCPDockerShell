@@ -5,10 +5,8 @@
 # https://docs.docker.com/go/dockerfile-reference/
 
 # Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
-
-ARG PYTHON_VERSION=3.11.9
-FROM python:${PYTHON_VERSION}-slim as base
-LABEL version="1.2.5"
+FROM python:3.11
+LABEL version="1.0.0"
 LABEL description="A large developer focused MCP server for running with AI more easily."
 LABEL author='RA86-dev'
 # Prevents Python from writing pyc files.
@@ -20,18 +18,18 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-
+RUN pip install --upgrade pip
 # into this layer.
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
-RUN playwright install
+RUN playwright install --only-shell
 
 
 # Copy the source code into the container.
 COPY . .
 
 # Expose the port that the application listens on.
-EXPOSE 8000 8001
+EXPOSE 8000
 # Run the application.
-CMD python3 main.py --transport sse
+CMD python3 main.py --transport sse --verbose # default transport method.

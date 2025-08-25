@@ -1,4 +1,4 @@
 FROM ghcr.io/freecodecamp/devdocs:latest-alpine
 
 # Simple sync loop
-CMD ["/bin/sh", "-c", "while true; do bundle exec thor docs:download --all; echo 'Synced at $(date)'; sleep 604800; done"]
+CMD ["/bin/sh", "-c", "while true; echo 'Synced at $(date)';do bundle exec thor docs:download --all; sleep 604800; done"]
