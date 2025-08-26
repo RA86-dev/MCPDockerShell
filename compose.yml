@@ -15,6 +15,7 @@ services:
     volumes:
       - ./config:/etc/searxng/
       - ./data:/var/cache/searxng/
+      - ./settings.yml:/usr/local/searxng/searx/settings.yml
     restart: always
   devdocs:
     image: ghcr.io/freecodecamp/devdocs:latest-alpine
