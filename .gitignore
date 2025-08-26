@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 .ropeproject/
+.DS_Store/
 wheels/
 *.egg-info
 # Virtual environments
