@@ -35,13 +35,17 @@ services:
   notifysh:
     image: binwiederhier/ntfy
     restart: unless-stopped
+    ports:
+      - 8081:80
     environment:
       NTFY_BASE_URL: "http://localhost:8081"
       NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
       NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
       NTFY_ENABLE_LOGIN: true
       NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
-      
+    command: serve
+    volumes:
+      - ./:/var/lib/ntfy
   auto-sync:
     build:
       context: .
@@ -58,7 +62,7 @@ services:
     privileged: true
     restart: always
     ports:
-      - 8080:8000
+      - 8000:8000
     # --- GPU support [NVIDIA] Uncomment this section out if you want these features ---
     # deploy:
     #   resources:

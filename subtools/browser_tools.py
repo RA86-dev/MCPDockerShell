@@ -6,7 +6,7 @@ import secrets
 import base64
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-from notify import ntfyClient
+from subtools.notify import ntfyClient
 # Optional imports
 try:
     from playwright.async_api import async_playwright

@@ -6,7 +6,7 @@ import os
 import time
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-from notify import ntfyClient
+from subtools.notify import ntfyClient
 
 class DevelopmentTools:
     """Development and coding assistance tools"""

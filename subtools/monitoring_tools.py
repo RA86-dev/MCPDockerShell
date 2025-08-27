@@ -8,7 +8,7 @@ import docker
 from typing import Dict, Any, List
 from collections import defaultdict
 from datetime import datetime
-from notify import ntfyClient
+from subtools.notify import ntfyClient
 
 class MonitoringTools:
     """System and container monitoring functionality"""

@@ -6,7 +6,7 @@ import requests
 import json
 import urllib.parse
 from typing import List, Dict, Any, Optional
-from notify import ntfyClient
+from subtools.notify import ntfyClient
 
 class SearXNGTools:
     """Tools for interacting with SearXNG instance"""
