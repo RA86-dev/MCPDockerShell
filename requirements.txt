@@ -20,3 +20,4 @@ websockets>=11.0.2
 yfinance
 ty
 firecrawl-py>=0.0.13
+notify2
