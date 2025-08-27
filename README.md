@@ -41,7 +41,7 @@ If your Editor does not support Videos, visit [README_assets/creatingcode.mp4](R
 - **RAM:** 6 GB
 - **Storage:** 15 GB free space
 - **CPU:** 2 cores
-- **Architecture:** AMD64 (preferred) or ARM64 (more likely to cause random errors due to different instructions)
+- **Architecture:** AMD64 
 
 ### Recommended Specifications
 - **RAM:** 8 GB or more

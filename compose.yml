@@ -4,8 +4,13 @@
 # This services creates the server
 # NOTE: PLEASE CHECK FOR FEATURES YOU WANT
 #################################
-# Learn more in Documentation
+# Learn more in Documentation   #
+#                               #
+#                               #
+#################################
+
 services:
+  
   searxng:
     image: docker.io/searxng/searxng:latest
     ports:
@@ -15,7 +20,7 @@ services:
     volumes:
       - ./config:/etc/searxng/
       - ./data:/var/cache/searxng/
-      - ./settings.yml:/usr/local/searxng/searx/settings.yml
+      - ./static_assets/settings.yml:/usr/local/searxng/searx/settings.yml # enable API features by replacing internal settings.yml with a modified version
     restart: always
   devdocs:
     image: ghcr.io/freecodecamp/devdocs:latest-alpine
@@ -27,6 +32,16 @@ services:
     volumes:
       - devdocs-data:/app/.devdocs
     restart: always
+  notifysh:
+    image: binwiederhier/ntfy
+    restart: unless-stopped
+    environment:
+      NTFY_BASE_URL: "http://localhost:8081"
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_ENABLE_LOGIN: true
+      NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
+      
   auto-sync:
     build:
       context: .
@@ -43,7 +58,7 @@ services:
     privileged: true
     restart: always
     ports:
-      - 8000:8000
+      - 8080:8000
     # --- GPU support [NVIDIA] Uncomment this section out if you want these features ---
     # deploy:
     #   resources:
@@ -68,9 +83,11 @@ services:
     depends_on:
       - devdocs
       - searxng
+      - notifysh
     environment:
       - DEVDOCS_URL=http://devdocs:9292
       - SEARXNG_URL=http://searxng:8080
+      - NTFY_SERVER=http://notifysh:8081
       # --- Firecrawl [Local] ---
       # - FIRECRAWL_URL=http://firecrawl:3002
       # - ENABLE_FIRECRAWL=true

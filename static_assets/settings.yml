@@ -549,7 +549,7 @@ engines:
   - name: bing
     engine: bing
     shortcut: bi
-    disabled: true
+    disabled: false
 
   - name: bing images
     engine: bing_images
@@ -976,7 +976,7 @@ engines:
     engine: gitlab
     base_url: https://gitlab.com
     shortcut: gl
-    disabled: true
+    disabled: false
     about:
       website: https://gitlab.com/
       wikidata_id: Q16639197

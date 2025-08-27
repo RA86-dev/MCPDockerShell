@@ -5,7 +5,7 @@ import asyncio
 import requests
 import json
 from typing import List, Dict, Any, Optional
-
+from notify import ntfyClient
 # Optional import - Firecrawl won't be required
 try:
     from firecrawl import FirecrawlApp

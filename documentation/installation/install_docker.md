@@ -9,7 +9,7 @@ This guide provides comprehensive installation instructions for the MCP Docker D
 - **RAM**: 6 GB
 - **CPU**: 2 cores minimum
 - **Storage**: 15 GB free space
-- **Architecture**: AMD64 (preferred) or ARM64
+- **Architecture**: AMD64  only.
 - **Operating System**: Linux, macOS, or Windows with WSL2
 
 ### Recommended Specifications

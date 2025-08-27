@@ -12,7 +12,7 @@ import time
 import psutil
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-
+from notify import ntfyClient
 
 class DockerTools:
     """Core Docker management functionality"""

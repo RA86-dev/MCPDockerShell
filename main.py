@@ -3,7 +3,6 @@ f"""
 Name: MCPDevServer
 Version: {sv.SERVER_VERSION}
 """
-import server_version as sv
 from fastapi import FastAPI, Request
 import docker
 import tempfile
@@ -27,11 +26,12 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from fastapi.responses import HTMLResponse, RedirectResponse
-
+from subtools.notify import ntfyClient, NotificationTools
 
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
 _SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888")
+_ntfysh = os.getenv("NTFY_SERVER","http://localhost:8081") 
 uptime_launched = datetime.now()
 
 # Import all our modular tools
@@ -101,6 +101,7 @@ class ServiceConfig:
     documentation_tools: bool = True
     firecrawl_tools: bool = True
     searxng_tools: bool = True
+    notification_tools: bool = True
     websocket_enabled: bool = False
     security_level: SecurityLevel = SecurityLevel.MEDIUM
     auto_cleanup_enabled: bool = True
@@ -142,7 +143,7 @@ class MCPDockerServer:
         self.logs_dir = script_dir / "logs"
         self.config_dir = script_dir / "config"
         self.backup_dir = script_dir / "backups"
-
+        
         # Create directories
         for directory in [self.docs_dir, self.logs_dir, self.config_dir, self.backup_dir]:
             directory.mkdir(exist_ok=True)
@@ -217,6 +218,7 @@ class MCPDockerServer:
                 "rocm/rocm-terminal:latest",
                 "rocm/dev-ubuntu-20.04:latest",
                 "rocm/dev-ubuntu-22.04:latest",
+                
             }
             self.allowed_images.update(gpu_images)
 
@@ -307,6 +309,13 @@ class MCPDockerServer:
 
         self.searxng_tools = SearXNGTools(searxng_url=_SEARXNG_URL, logger=self.logger) if HAS_ALL_SUBTOOLS else None
 
+        # Initialize notification tools
+        self.notification_tools = NotificationTools(
+            ntfy_url=_ntfysh,
+            logger=self.logger,
+            monitoring_interval=7200  # 2 hours
+        ) if HAS_ALL_SUBTOOLS else None
+
     def _register_all_tools(self):
         """Register all tools with the MCP server"""
         try:
@@ -354,6 +363,11 @@ class MCPDockerServer:
                 self.searxng_tools.register_tools(self.mcp)
                 self.logger.info("Registered SearXNG tools")
 
+            # Register notification tools
+            if self.notification_tools and self._get_config("notification_tools", True):
+                self.notification_tools.register_tools(self.mcp)
+                self.logger.info("Registered notification tools")
+
             # Register basic utility tools
             self._register_utility_tools()
 
@@ -381,6 +395,7 @@ class MCPDockerServer:
                         "documentation": bool(self.documentation_tools),
                         "web_scraping": bool(self.firecrawl_tools),
                         "web_search": bool(self.searxng_tools),
+                        "notifications": bool(self.notification_tools),
                         "gpu_support": self.gpu_available
                     },
                     "configuration": {
@@ -388,7 +403,8 @@ class MCPDockerServer:
                         "temp_directory": self.temp_dir,
                         "docs_directory": str(self.docs_dir),
                         "devdocs_url": _DEVDOCS_URL,
-                        "searxng_url": _SEARXNG_URL
+                        "searxng_url": _SEARXNG_URL,
+                        "ntfy_url": _ntfysh
                     },
                     "system": {
                         "cpu_count": os.cpu_count(),
@@ -515,6 +531,15 @@ class MCPDockerServer:
         if hasattr(self.service_config, key):
             return getattr(self.service_config, key)
         return default
+    
+    def notify_tool_execution(self, tool_name: str, status: str, details: str = "", duration: float = None):
+        """Notify about tool execution via notification system"""
+        if self.notification_tools and hasattr(self.notification_tools, 'notify_tool_execution'):
+            try:
+                self.notification_tools.notify_tool_execution(tool_name, status, details, duration)
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Error sending tool notification: {e}")
 
     def cleanup(self):
         """Clean up resources on shutdown"""
@@ -530,6 +555,10 @@ class MCPDockerServer:
             import shutil
             if os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
+
+            # Cleanup notification tools
+            if hasattr(self, 'notification_tools') and self.notification_tools:
+                self.notification_tools.cleanup()
 
             # Shutdown thread pool
             self.executor.shutdown(wait=True)
@@ -568,6 +597,7 @@ def main():
     parser.add_argument("--disable-docs", action="store_true", help="Disable documentation tools")
     parser.add_argument("--disable-firecrawl", action="store_true", help="Disable Firecrawl tools")
     parser.add_argument("--disable-searxng", action="store_true", help="Disable SearXNG tools")
+    parser.add_argument("--disable-notifications", action="store_true", help="Disable notification system")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
@@ -590,6 +620,8 @@ def main():
         service_config.firecrawl_tools = False
     if args.disable_searxng:
         service_config.searxng_tools = False
+    if args.disable_notifications:
+        service_config.notification_tools = False
 
     try:
         # Initialize and run server

@@ -6,7 +6,7 @@ import requests
 import os
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-
+from notify import ntfyClient
 
 class DocumentationTools:
     """Documentation access and search functionality"""
