@@ -29,7 +29,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
-_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888") 
+_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888")
 uptime_launched = datetime.now()
 
 # Import all our modular tools
@@ -100,7 +100,6 @@ class ServiceConfig:
     documentation_tools: bool = True
     firecrawl_tools: bool = True
     searxng_tools: bool = True
-    notification_tools: bool = True
     websocket_enabled: bool = False,
     module_Finder: bool=True
     security_level: SecurityLevel = SecurityLevel.MEDIUM
@@ -143,7 +142,7 @@ class MCPDockerServer:
         self.logs_dir = script_dir / "logs"
         self.config_dir = script_dir / "config"
         self.backup_dir = script_dir / "backups"
-        
+
         # Create directories
         for directory in [self.docs_dir, self.logs_dir, self.config_dir, self.backup_dir]:
             directory.mkdir(exist_ok=True)
@@ -218,7 +217,7 @@ class MCPDockerServer:
                 "rocm/rocm-terminal:latest",
                 "rocm/dev-ubuntu-20.04:latest",
                 "rocm/dev-ubuntu-22.04:latest",
-                
+
             }
             self.allowed_images.update(gpu_images)
 
@@ -255,7 +254,7 @@ class MCPDockerServer:
             logger=self.logger
         ) if HAS_ALL_SUBTOOLS else None
         self.module_finder = ModuleFinder(
-            
+
         ) if HAS_ALL_SUBTOOLS else None
 
         # Initialize browser tools
@@ -312,7 +311,7 @@ class MCPDockerServer:
 
         self.searxng_tools = SearXNGTools(searxng_url=_SEARXNG_URL, logger=self.logger) if HAS_ALL_SUBTOOLS else None
 
-      
+
     def _register_all_tools(self):
         """Register all tools with the MCP server"""
         try:
@@ -363,7 +362,7 @@ class MCPDockerServer:
                 self.logger.info("Registered SearXNG tools")
 
             # Register notification tools
-           
+
             # Register basic utility tools
             self._register_utility_tools()
 
@@ -391,7 +390,7 @@ class MCPDockerServer:
                         "documentation": bool(self.documentation_tools),
                         "web_scraping": bool(self.firecrawl_tools),
                         "web_search": bool(self.searxng_tools),
-                        "notifications": bool(self.notification_tools),
+
                         "gpu_support": self.gpu_available
                     },
                     "configuration": {
@@ -400,7 +399,7 @@ class MCPDockerServer:
                         "docs_directory": str(self.docs_dir),
                         "devdocs_url": _DEVDOCS_URL,
                         "searxng_url": _SEARXNG_URL,
-                        
+
                     },
                     "system": {
                         "cpu_count": os.cpu_count(),
@@ -527,15 +526,6 @@ class MCPDockerServer:
         if hasattr(self.service_config, key):
             return getattr(self.service_config, key)
         return default
-    
-    def notify_tool_execution(self, tool_name: str, status: str, details: str = "", duration: float = None):
-        """Notify about tool execution via notification system"""
-        if self.notification_tools and hasattr(self.notification_tools, 'notify_tool_execution'):
-            try:
-                self.notification_tools.notify_tool_execution(tool_name, status, details, duration)
-            except Exception as e:
-                if self.logger:
-                    self.logger.error(f"Error sending tool notification: {e}")
 
     def cleanup(self):
         """Clean up resources on shutdown"""
@@ -551,10 +541,6 @@ class MCPDockerServer:
             import shutil
             if os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
-
-            # Cleanup notification tools
-            if hasattr(self, 'notification_tools') and self.notification_tools:
-                self.notification_tools.cleanup()
 
             # Shutdown thread pool
             self.executor.shutdown(wait=True)
@@ -593,7 +579,6 @@ def main():
     parser.add_argument("--disable-docs", action="store_true", help="Disable documentation tools")
     parser.add_argument("--disable-firecrawl", action="store_true", help="Disable Firecrawl tools")
     parser.add_argument("--disable-searxng", action="store_true", help="Disable SearXNG tools")
-    parser.add_argument("--disable-notifications", action="store_true", help="Disable notification system")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
@@ -616,8 +601,6 @@ def main():
         service_config.firecrawl_tools = False
     if args.disable_searxng:
         service_config.searxng_tools = False
-    if args.disable_notifications:
-        service_config.notification_tools = False
 
     try:
         # Initialize and run server

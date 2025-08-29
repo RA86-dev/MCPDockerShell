@@ -1,9 +1,10 @@
 import requests
+
 class ModuleFinder:
     def __init__(self):
         pass
 
-    def _find_npm(self,lib_name: str):
+    def _find_npm(self, lib_name: str):
         result_data = {}
         endpoint = f"https://registry.npmjs.org/{lib_name}"
         response = requests.get(endpoint)
@@ -16,12 +17,13 @@ class ModuleFinder:
             version_requested = versions[value]
             result_data[key] = version_requested
         return {
-            "versions_latest":distribution_tags,
-            "version_latest_data":result_data
+            "versions_latest": distribution_tags,
+            "version_latest_data": result_data
         }
-    def _find_pypi(self,lib_name: str):
+
+    def _find_pypi(self, lib_name: str):
         final_output = {
-            "releases_info":[]
+            "releases_info": []
         }
         endpoint = f"https://pypi.org/pypi/{lib_name}/json"
         response = requests.get(endpoint)
@@ -30,12 +32,12 @@ class ModuleFinder:
         result_json = response.json()
         information_data = result_json.get('info')
         releases = result_json.get("releases")
-        latest_5_releases = releases.key()[5:]
-
+        # Get the latest 5 releases (fix: use list() and slice properly)
+        latest_5_releases = list(releases.keys())[-5:]
         for release_loop in latest_5_releases:
             final_output['releases_info'].append(
                 {
-                    "version":release_loop,
+                    "version": release_loop,
                     "data": releases[release_loop]
                 }
             )
@@ -63,5 +65,6 @@ class ModuleFinder:
             elif package_manager == "pypi":
                 return self._find_pypi(lib_name)
             else:
-                raise ValueError("Unsupported package manager. Use 'npm' or 'pypi'."
-        )
+                raise ValueError("Unsupported package manager. Use 'npm' or 'pypi'.")
+
+        return find_module
