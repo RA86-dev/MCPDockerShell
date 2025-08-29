@@ -5,7 +5,6 @@ import json
 import time
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-from subtools.notify import ntfyClient
 
 class WorkflowTools:
     """Workflow automation and CI/CD functionality"""

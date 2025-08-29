@@ -26,7 +26,6 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from fastapi.responses import HTMLResponse, RedirectResponse
-from subtools.notify import ntfyClient, NotificationTools
 
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
@@ -309,13 +308,7 @@ class MCPDockerServer:
 
         self.searxng_tools = SearXNGTools(searxng_url=_SEARXNG_URL, logger=self.logger) if HAS_ALL_SUBTOOLS else None
 
-        # Initialize notification tools
-        self.notification_tools = NotificationTools(
-            ntfy_url=_ntfysh,
-            logger=self.logger,
-            monitoring_interval=7200  # 2 hours
-        ) if HAS_ALL_SUBTOOLS else None
-
+      
     def _register_all_tools(self):
         """Register all tools with the MCP server"""
         try:
@@ -364,10 +357,7 @@ class MCPDockerServer:
                 self.logger.info("Registered SearXNG tools")
 
             # Register notification tools
-            if self.notification_tools and self._get_config("notification_tools", True):
-                self.notification_tools.register_tools(self.mcp)
-                self.logger.info("Registered notification tools")
-
+           
             # Register basic utility tools
             self._register_utility_tools()
 

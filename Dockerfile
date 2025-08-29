@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # Multi-architecture support - optimized for ARM64/Apple Silicon
-FROM ubuntu:22.04
+FROM python:3.11.13-bookworm
 
-LABEL version="1.0.0"
+LABEL version="1.0.0" 
 LABEL description="A large developer focused MCP server for running with AI more easily."
 LABEL author='RA86-dev'
 
