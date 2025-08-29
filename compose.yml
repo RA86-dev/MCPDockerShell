@@ -3,14 +3,13 @@
 # Supported GPUS: AMD and NVIDIA GPU supported, Intel Not supported.
 # This services creates the server
 # NOTE: PLEASE CHECK FOR FEATURES YOU WANT
-#################################
+#.                              #
 # Learn more in Documentation   #
 #                               #
 #                               #
 #################################
 
 services:
-  
   searxng:
     image: docker.io/searxng/searxng:latest
     ports:
@@ -49,7 +48,7 @@ services:
     restart: always
     ports:
       - 8000:8000
-    user: "0:0"  # Run as root to access Docker socket
+    user: "0:0" # Run as root to access Docker socket
     # --- GPU support [NVIDIA] Uncomment this section out if you want these features ---
     # deploy:
     #   resources:
