@@ -19,7 +19,7 @@ class ModuleFinder:
             result_data[key] = version_requested
         return {
             "versions_latest": distribution_tags,
-            "version_latest_data": result_data
+            "version_latest_data": result_data,
         }
 
     def _find_pypi(self, lib_name: str):
@@ -29,15 +29,14 @@ class ModuleFinder:
         if response.status_code != 200:
             return None
         result_json = response.json()
-        information_data = result_json.get('info')
+        information_data = result_json.get("info")
         releases = result_json.get("releases", {})
         latest_5_releases = list(releases.keys())[-5:]
         for release_loop in latest_5_releases:
-            final_output['releases_info'].append({
-                "version": release_loop,
-                "data": releases[release_loop]
-            })
-        final_output['info'] = information_data
+            final_output["releases_info"].append(
+                {"version": release_loop, "data": releases[release_loop]}
+            )
+        final_output["info"] = information_data
         return final_output
 
     def _find_maven(self, group_id: str, artifact_id: str):
@@ -78,7 +77,7 @@ class ModuleFinder:
             lib_name: str,
             package_manager: str = "npm",
             group_id: str = None,
-            artifact_id: str = None
+            artifact_id: str = None,
         ) -> dict:
             """
             Find a module in the specified package manager.
@@ -105,6 +104,8 @@ class ModuleFinder:
             elif package_manager == "rubygems":
                 return self._find_rubygems(lib_name)
             else:
-                raise ValueError("Unsupported package manager. Use 'npm', 'pypi', 'maven', 'packagist', or 'rubygems'.")
+                raise ValueError(
+                    "Unsupported package manager. Use 'npm', 'pypi', 'maven', 'packagist', or 'rubygems'."
+                )
 
         return find_module

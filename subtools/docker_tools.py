@@ -1,6 +1,7 @@
 """
 Docker management tools for container operations
 """
+
 import docker
 import tempfile
 import os
@@ -13,9 +14,10 @@ import psutil
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+
 class DockerTools:
     """Core Docker management functionality"""
- 
+
     def __init__(self, docker_client, allowed_images: set, temp_dir: str, logger=None):
         self.docker_client = docker_client
         self.allowed_images = allowed_images
@@ -31,12 +33,14 @@ class DockerTools:
         async def list_allowed_images() -> List[str]:
             """List allowed Docker images that can be used to create containers"""
             return sorted(list(self.allowed_images))
+
         @mcp_server.tool()
         async def inspect_container(container: str):
             """Inspects the container, and runs the command docker command"""
             inspected = subprocess.run(
-                ["docker","container","inspect",container],
-                capture_output=True,timeout=20
+                ["docker", "container", "inspect", container],
+                capture_output=True,
+                timeout=20,
             )
             if inspected.returncode == 0:
                 data = inspected.stdout
@@ -52,36 +56,92 @@ class DockerTools:
             # Check NVIDIA GPU status
             try:
                 result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True, timeout=10
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=name,memory.total,memory.used,utilization.gpu",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if result.returncode == 0:
                     nvidia_info = []
-                    for line in result.stdout.strip().split('\n'):
+                    for line in result.stdout.strip().split("\n"):
                         if line.strip():
-                            name, mem_total, mem_used, utilization = [x.strip() for x in line.split(',')]
-                            nvidia_info.append({
-                                "name": name,
-                                "memory_total_mb": int(mem_total),
-                                "memory_used_mb": int(mem_used),
-                                "utilization_percent": int(utilization)
-                            })
-                    status_info.append({"type": "NVIDIA", "gpus": nvidia_info, "available": True})
+                            name, mem_total, mem_used, utilization = [
+                                x.strip() for x in line.split(",")
+                            ]
+                            nvidia_info.append(
+                                {
+                                    "name": name,
+                                    "memory_total_mb": int(mem_total),
+                                    "memory_used_mb": int(mem_used),
+                                    "utilization_percent": int(utilization),
+                                }
+                            )
+                    status_info.append(
+                        {"type": "NVIDIA", "gpus": nvidia_info, "available": True}
+                    )
                 else:
-                    status_info.append({"type": "NVIDIA", "available": False, "error": "nvidia-smi failed"})
-            except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
-                status_info.append({"type": "NVIDIA", "available": False, "error": "nvidia-smi not found or failed"})
+                    status_info.append(
+                        {
+                            "type": "NVIDIA",
+                            "available": False,
+                            "error": "nvidia-smi failed",
+                        }
+                    )
+            except (
+                subprocess.TimeoutExpired,
+                FileNotFoundError,
+                subprocess.SubprocessError,
+            ):
+                status_info.append(
+                    {
+                        "type": "NVIDIA",
+                        "available": False,
+                        "error": "nvidia-smi not found or failed",
+                    }
+                )
 
             # Check AMD ROCm status
             try:
-                result = subprocess.run(["rocm-smi", "--showproductname", "--showmeminfo", "vram", "--showuse"],
-                                       capture_output=True, text=True, timeout=10)
+                result = subprocess.run(
+                    [
+                        "rocm-smi",
+                        "--showproductname",
+                        "--showmeminfo",
+                        "vram",
+                        "--showuse",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
                 if result.returncode == 0:
-                    status_info.append({"type": "AMD_ROCm", "available": True, "info": "ROCm detected"})
+                    status_info.append(
+                        {"type": "AMD_ROCm", "available": True, "info": "ROCm detected"}
+                    )
                 else:
-                    status_info.append({"type": "AMD_ROCm", "available": False, "error": "rocm-smi failed"})
-            except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
-                status_info.append({"type": "AMD_ROCm", "available": False, "error": "rocm-smi not found"})
+                    status_info.append(
+                        {
+                            "type": "AMD_ROCm",
+                            "available": False,
+                            "error": "rocm-smi failed",
+                        }
+                    )
+            except (
+                subprocess.TimeoutExpired,
+                FileNotFoundError,
+                subprocess.SubprocessError,
+            ):
+                status_info.append(
+                    {
+                        "type": "AMD_ROCm",
+                        "available": False,
+                        "error": "rocm-smi not found",
+                    }
+                )
 
             return json.dumps(status_info, indent=2)
 
@@ -92,7 +152,7 @@ class DockerTools:
             command: str = None,
             environment: Dict[str, str] = None,
             ports: Dict[str, int] = None,
-            use_gpu: bool = False
+            use_gpu: bool = False,
         ) -> str:
             """Create and start a new Docker container that runs indefinitely"""
             if image not in self.allowed_images:
@@ -104,7 +164,7 @@ class DockerTools:
                     "detach": True,
                     "stdin_open": True,
                     "tty": True,
-                    "working_dir": "/workspace"
+                    "working_dir": "/workspace",
                 }
 
                 if name:
@@ -136,13 +196,19 @@ class DockerTools:
                         container_config["runtime"] = "nvidia"
                         if not environment:
                             container_config["environment"] = {}
-                        container_config["environment"]["NVIDIA_VISIBLE_DEVICES"] = "all"
+                        container_config["environment"][
+                            "NVIDIA_VISIBLE_DEVICES"
+                        ] = "all"
                     except Exception as gpu_error:
                         if self.logger:
-                            self.logger.warning(f"GPU configuration failed: {gpu_error}")
+                            self.logger.warning(
+                                f"GPU configuration failed: {gpu_error}"
+                            )
 
                 # Create workspace volume
-                container_config["volumes"] = {"/tmp/workspace": {"bind": "/workspace", "mode": "rw"}}
+                container_config["volumes"] = {
+                    "/tmp/workspace": {"bind": "/workspace", "mode": "rw"}
+                }
                 os.makedirs("/tmp/workspace", exist_ok=True)
 
                 container = self.docker_client.containers.run(**container_config)
@@ -151,7 +217,7 @@ class DockerTools:
                     "container": container,
                     "name": name or container.name,
                     "created_at": time.time(),
-                    "image": image
+                    "image": image,
                 }
 
                 return f"Container created successfully: {container.name} ({container.id[:12]})"
@@ -168,7 +234,7 @@ class DockerTools:
 
             try:
                 result = container.exec_run(command, tty=True, stream=False)
-                output = result.output.decode('utf-8', errors='replace')
+                output = result.output.decode("utf-8", errors="replace")
 
                 return f"Exit code: {result.exit_code}\nOutput:\n{output}"
 
@@ -189,10 +255,16 @@ class DockerTools:
                         container_info = {
                             "id": container.id[:12],
                             "name": container.name,
-                            "image": container.image.tags[0] if container.image.tags else container.image.id[:12],
+                            "image": (
+                                container.image.tags[0]
+                                if container.image.tags
+                                else container.image.id[:12]
+                            ),
                             "status": container.status,
-                            "created": container.attrs.get('Created', 'Unknown'),
-                            "ports": container.ports if hasattr(container, 'ports') else {}
+                            "created": container.attrs.get("Created", "Unknown"),
+                            "ports": (
+                                container.ports if hasattr(container, "ports") else {}
+                            ),
                         }
                         containers_info.append(container_info)
                     except Exception as e:
@@ -218,10 +290,12 @@ class DockerTools:
                 file_path = workspace_path / filename
 
                 # Ensure we don't write outside workspace
-                if not str(file_path.resolve()).startswith(str(workspace_path.resolve())):
+                if not str(file_path.resolve()).startswith(
+                    str(workspace_path.resolve())
+                ):
                     return f"Error: Invalid file path. Must be within workspace."
 
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
 
                 return f"File uploaded successfully: {filename} ({len(content)} characters)"
@@ -238,15 +312,17 @@ class DockerTools:
                     return "Workspace directory does not exist"
 
                 files_info = []
-                for item in workspace_path.rglob('*'):
+                for item in workspace_path.rglob("*"):
                     if item.is_file():
                         try:
                             stat = item.stat()
-                            files_info.append({
-                                "name": str(item.relative_to(workspace_path)),
-                                "size": stat.st_size,
-                                "modified": time.ctime(stat.st_mtime)
-                            })
+                            files_info.append(
+                                {
+                                    "name": str(item.relative_to(workspace_path)),
+                                    "size": stat.st_size,
+                                    "modified": time.ctime(stat.st_mtime),
+                                }
+                            )
                         except Exception:
                             continue
 
@@ -322,7 +398,7 @@ class DockerTools:
 
             try:
                 logs = container.logs(tail=tail, timestamps=True)
-                return logs.decode('utf-8', errors='replace')
+                return logs.decode("utf-8", errors="replace")
             except Exception as e:
                 return f"Error getting container logs: {str(e)}"
 
@@ -340,7 +416,10 @@ class DockerTools:
                 # Try partial ID match
                 containers = self.docker_client.containers.list(all=True)
                 for container in containers:
-                    if container.id.startswith(container_id) or container.name == container_id:
+                    if (
+                        container.id.startswith(container_id)
+                        or container.name == container_id
+                    ):
                         return container
                 return None
         except Exception as e:

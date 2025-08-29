@@ -1,14 +1,17 @@
 """
 Browser automation tools using Playwright and Selenium
 """
+
 import json
 import secrets
 import base64
 from typing import Dict, Any, Optional, List
 from pathlib import Path
+
 # Optional imports
 try:
     from playwright.async_api import async_playwright
+
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
@@ -20,6 +23,7 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.chrome.options import Options as ChromeOptions
     from selenium.webdriver.firefox.options import Options as FirefoxOptions
+
     HAS_SELENIUM = True
 except ImportError:
     HAS_SELENIUM = False
@@ -43,7 +47,7 @@ class BrowserTools:
         async def playwright_launch_browser(
             browser_type: str = "chromium",
             headless: bool = True,
-            args: List[str] = None
+            args: List[str] = None,
         ) -> str:
             """Launch a new Playwright browser instance (chromium, firefox, or webkit). Supports headless, so try to use Headless."""
             if not HAS_PLAYWRIGHT:
@@ -68,7 +72,7 @@ class BrowserTools:
                 self.active_browsers[browser_id] = {
                     "browser": browser,
                     "type": browser_type,
-                    "pages": {}
+                    "pages": {},
                 }
 
                 return f"Browser launched successfully: {browser_id}"
@@ -78,9 +82,7 @@ class BrowserTools:
 
         @mcp_server.tool()
         async def playwright_create_page(
-            browser_id: str,
-            viewport_width: int = 1920,
-            viewport_height: int = 1080
+            browser_id: str, viewport_width: int = 1920, viewport_height: int = 1080
         ) -> str:
             """Create a new page in a Playwright browser"""
             if browser_id not in self.active_browsers:
@@ -89,7 +91,9 @@ class BrowserTools:
             try:
                 browser_info = self.active_browsers[browser_id]
                 page = await browser_info["browser"].new_page()
-                await page.set_viewport_size({"width": viewport_width, "height": viewport_height})
+                await page.set_viewport_size(
+                    {"width": viewport_width, "height": viewport_height}
+                )
 
                 page_id = f"page_{secrets.token_hex(8)}"
                 browser_info["pages"][page_id] = page
@@ -100,7 +104,9 @@ class BrowserTools:
                 return f"Error creating page: {str(e)}"
 
         @mcp_server.tool()
-        async def playwright_navigate(browser_id: str, page_id: str, url: str, wait_until: str = "load") -> str:
+        async def playwright_navigate(
+            browser_id: str, page_id: str, url: str, wait_until: str = "load"
+        ) -> str:
             """Navigate to a URL in a Playwright page"""
             page = self._get_playwright_page(browser_id, page_id)
             if isinstance(page, str):
@@ -113,7 +119,9 @@ class BrowserTools:
                 return f"Error navigating to {url}: {str(e)}"
 
         @mcp_server.tool()
-        async def playwright_click(browser_id: str, page_id: str, selector: str, timeout: int = 30000) -> str:
+        async def playwright_click(
+            browser_id: str, page_id: str, selector: str, timeout: int = 30000
+        ) -> str:
             """Click an element on a Playwright page"""
             page = self._get_playwright_page(browser_id, page_id)
             if isinstance(page, str):
@@ -126,7 +134,13 @@ class BrowserTools:
                 return f"Error clicking element {selector}: {str(e)}"
 
         @mcp_server.tool()
-        async def playwright_type(browser_id: str, page_id: str, selector: str, text: str, timeout: int = 30000) -> str:
+        async def playwright_type(
+            browser_id: str,
+            page_id: str,
+            selector: str,
+            text: str,
+            timeout: int = 30000,
+        ) -> str:
             """Type text into an element on a Playwright page"""
             page = self._get_playwright_page(browser_id, page_id)
             if isinstance(page, str):
@@ -144,7 +158,7 @@ class BrowserTools:
             page_id: str,
             filename: str = None,
             full_page: bool = False,
-            return_base64: bool = False
+            return_base64: bool = False,
         ) -> str:
             """Take a screenshot of a Playwright page"""
             page = self._get_playwright_page(browser_id, page_id)
@@ -177,7 +191,9 @@ class BrowserTools:
                 return f"Error taking screenshot: {str(e)}"
 
         @mcp_server.tool()
-        async def playwright_get_text(browser_id: str, page_id: str, selector: str, timeout: int = 30000) -> str:
+        async def playwright_get_text(
+            browser_id: str, page_id: str, selector: str, timeout: int = 30000
+        ) -> str:
             """Get text content from an element on a Playwright page"""
             page = self._get_playwright_page(browser_id, page_id)
             if isinstance(page, str):
@@ -195,11 +211,13 @@ class BrowserTools:
         async def selenium_launch_driver(
             browser_type: str = "chrome",
             headless: bool = True,
-            options: List[str] = None
+            options: List[str] = None,
         ) -> str:
             """Launch a Selenium WebDriver (chrome or firefox)"""
             if not HAS_SELENIUM:
-                return "Error: Selenium not installed. Install with: pip install selenium"
+                return (
+                    "Error: Selenium not installed. Install with: pip install selenium"
+                )
 
             try:
                 driver_id = f"{browser_type}_{secrets.token_hex(8)}"
@@ -233,7 +251,7 @@ class BrowserTools:
 
                 self.active_selenium_drivers[driver_id] = {
                     "driver": driver,
-                    "type": browser_type
+                    "type": browser_type,
                 }
 
                 return f"Selenium driver launched successfully: {driver_id}"
@@ -255,7 +273,9 @@ class BrowserTools:
                 return f"Error navigating to {url}: {str(e)}"
 
         @mcp_server.tool()
-        async def selenium_click(driver_id: str, selector: str, by: str = "css", timeout: int = 10) -> str:
+        async def selenium_click(
+            driver_id: str, selector: str, by: str = "css", timeout: int = 10
+        ) -> str:
             """Click an element using Selenium"""
             if driver_id not in self.active_selenium_drivers:
                 return f"Selenium driver {driver_id} not found"
@@ -279,7 +299,7 @@ class BrowserTools:
             text: str,
             by: str = "css",
             clear: bool = True,
-            timeout: int = 10
+            timeout: int = 10,
         ) -> str:
             """Type text into an element using Selenium"""
             if driver_id not in self.active_selenium_drivers:
@@ -290,7 +310,9 @@ class BrowserTools:
                 wait = WebDriverWait(driver, timeout)
 
                 by_method = getattr(By, by.upper(), By.CSS_SELECTOR)
-                element = wait.until(EC.presence_of_element_located((by_method, selector)))
+                element = wait.until(
+                    EC.presence_of_element_located((by_method, selector))
+                )
 
                 if clear:
                     element.clear()
@@ -305,7 +327,7 @@ class BrowserTools:
             """List all active browser instances"""
             instances = {
                 "playwright_browsers": list(self.active_browsers.keys()),
-                "selenium_drivers": list(self.active_selenium_drivers.keys())
+                "selenium_drivers": list(self.active_selenium_drivers.keys()),
             }
             return json.dumps(instances, indent=2)
 

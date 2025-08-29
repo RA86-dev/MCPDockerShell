@@ -1,4 +1,5 @@
 import server_version as sv
+
 f"""
 Name: MCPDevServer
 Version: {sv.SERVER_VERSION}
@@ -43,6 +44,7 @@ try:
     from subtools.firecrawl_tools import FirecrawlTools
     from subtools.searxng_tools import SearXNGTools
     from subtools.module_finder import ModuleFinder
+
     HAS_ALL_SUBTOOLS = True
 except ImportError as e:
     print(f"Warning: Some subtools could not be imported: {e}")
@@ -51,12 +53,14 @@ except ImportError as e:
 # Optional imports for enhanced features
 try:
     from passlib.context import CryptContext
+
     HAS_PASSLIB = True
 except ImportError:
     HAS_PASSLIB = False
 
 try:
     import jose
+
     HAS_JOSE = True
 
 except ImportError:
@@ -92,6 +96,7 @@ class ContainerStatus(str, Enum):
 @dataclass
 class ServiceConfig:
     """Configuration for MCP services"""
+
     docker_management: bool = True
     browser_automation: bool = True
     monitoring_tools: bool = True
@@ -100,8 +105,8 @@ class ServiceConfig:
     documentation_tools: bool = True
     firecrawl_tools: bool = True
     searxng_tools: bool = True
-    websocket_enabled: bool = False,
-    module_Finder: bool=True
+    websocket_enabled: bool = (False,)
+    module_Finder: bool = True
     security_level: SecurityLevel = SecurityLevel.MEDIUM
     auto_cleanup_enabled: bool = True
     health_checks_enabled: bool = True
@@ -110,6 +115,7 @@ class ServiceConfig:
 
 class ServerMetrics(BaseModel):
     """Server performance metrics"""
+
     requests_total: int = 0
     requests_successful: int = 0
     requests_failed: int = 0
@@ -121,6 +127,7 @@ class ServerMetrics(BaseModel):
 
 class HealthStatus(BaseModel):
     """System health status"""
+
     status: str = "healthy"
     docker_connected: bool = True
     memory_usage_percent: float = 0.0
@@ -144,7 +151,12 @@ class MCPDockerServer:
         self.backup_dir = script_dir / "backups"
 
         # Create directories
-        for directory in [self.docs_dir, self.logs_dir, self.config_dir, self.backup_dir]:
+        for directory in [
+            self.docs_dir,
+            self.logs_dir,
+            self.config_dir,
+            self.backup_dir,
+        ]:
             directory.mkdir(exist_ok=True)
 
         # Initialize logging
@@ -176,35 +188,62 @@ class MCPDockerServer:
         # Define comprehensive set of allowed development images
         self.allowed_images = {
             # Base OS images
-            "ubuntu:latest", "ubuntu:22.04", "ubuntu:20.04",
-            "debian:latest", "debian:bullseye", "debian:bookworm",
-            "alpine:latest", "alpine:3.18",
-            "fedora:latest", "fedora:38",
-            "rockylinux:latest", "rockylinux:9",
-
+            "ubuntu:latest",
+            "ubuntu:22.04",
+            "ubuntu:20.04",
+            "debian:latest",
+            "debian:bullseye",
+            "debian:bookworm",
+            "alpine:latest",
+            "alpine:3.18",
+            "fedora:latest",
+            "fedora:38",
+            "rockylinux:latest",
+            "rockylinux:9",
             # Language-specific images
-            "python:3.11", "python:3.10", "python:3.9", "python:latest",
-            "node:18", "node:20", "node:latest", "node:18-alpine", "node:20-alpine",
-            "openjdk:17", "openjdk:11", "openjdk:21",
-            "golang:1.21", "golang:latest", "golang:1.21-alpine",
-            "rust:latest", "rust:1.70", "rust:1.70-slim",
-            "php:8.2", "php:8.1", "php:latest",
-            "ruby:3.2", "ruby:latest",
-
+            "python:3.11",
+            "python:3.10",
+            "python:3.9",
+            "python:latest",
+            "node:18",
+            "node:20",
+            "node:latest",
+            "node:18-alpine",
+            "node:20-alpine",
+            "openjdk:17",
+            "openjdk:11",
+            "openjdk:21",
+            "golang:1.21",
+            "golang:latest",
+            "golang:1.21-alpine",
+            "rust:latest",
+            "rust:1.70",
+            "rust:1.70-slim",
+            "php:8.2",
+            "php:8.1",
+            "php:latest",
+            "ruby:3.2",
+            "ruby:latest",
             # Database images
-            "postgres:15", "postgres:14", "postgres:latest",
-            "mysql:8.0", "mysql:latest",
-            "redis:7", "redis:latest", "redis:alpine",
-            "mongodb:latest", "mongodb:7",
-
+            "postgres:15",
+            "postgres:14",
+            "postgres:latest",
+            "mysql:8.0",
+            "mysql:latest",
+            "redis:7",
+            "redis:latest",
+            "redis:alpine",
+            "mongodb:latest",
+            "mongodb:7",
             # Web servers
-            "nginx:latest", "nginx:alpine",
-            "httpd:latest", "httpd:alpine",
-
+            "nginx:latest",
+            "nginx:alpine",
+            "httpd:latest",
+            "httpd:alpine",
             # Development tools
             "jenkins/jenkins:lts",
             "gitlab/gitlab-ce:latest",
-            "portainer/portainer-ce:latest"
+            "portainer/portainer-ce:latest",
         }
 
         # Add GPU images if available
@@ -217,7 +256,6 @@ class MCPDockerServer:
                 "rocm/rocm-terminal:latest",
                 "rocm/dev-ubuntu-20.04:latest",
                 "rocm/dev-ubuntu-22.04:latest",
-
             }
             self.allowed_images.update(gpu_images)
 
@@ -244,73 +282,100 @@ class MCPDockerServer:
     def _init_tool_modules(self):
         """Initialize all tool modules"""
         if not HAS_ALL_SUBTOOLS:
-            self.logger.warning("Not all subtools available - some functionality will be limited")
+            self.logger.warning(
+                "Not all subtools available - some functionality will be limited"
+            )
 
         # Initialize Docker tools
-        self.docker_tools = DockerTools(
-            docker_client=self.docker_client,
-            allowed_images=self.allowed_images,
-            temp_dir=self.temp_dir,
-            logger=self.logger
-        ) if HAS_ALL_SUBTOOLS else None
-        self.module_finder = ModuleFinder(
-
-        ) if HAS_ALL_SUBTOOLS else None
+        self.docker_tools = (
+            DockerTools(
+                docker_client=self.docker_client,
+                allowed_images=self.allowed_images,
+                temp_dir=self.temp_dir,
+                logger=self.logger,
+            )
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
+        self.module_finder = ModuleFinder() if HAS_ALL_SUBTOOLS else None
 
         # Initialize browser tools
-        self.browser_tools = BrowserTools(
-            temp_dir=self.temp_dir,
-            logger=self.logger
-        ) if HAS_ALL_SUBTOOLS else None
+        self.browser_tools = (
+            BrowserTools(temp_dir=self.temp_dir, logger=self.logger)
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
 
         # Initialize monitoring tools
-        self.monitoring_tools = MonitoringTools(
-            docker_client=self.docker_client,
-            active_containers=self.active_containers,
-            logger=self.logger
-        ) if HAS_ALL_SUBTOOLS else None
+        self.monitoring_tools = (
+            MonitoringTools(
+                docker_client=self.docker_client,
+                active_containers=self.active_containers,
+                logger=self.logger,
+            )
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
 
         # Initialize development tools
-        self.development_tools = DevelopmentTools(
-            docker_client=self.docker_client,
-            active_containers=self.active_containers,
-            temp_dir=self.temp_dir,
-            logger=self.logger
-        ) if HAS_ALL_SUBTOOLS else None
+        self.development_tools = (
+            DevelopmentTools(
+                docker_client=self.docker_client,
+                active_containers=self.active_containers,
+                temp_dir=self.temp_dir,
+                logger=self.logger,
+            )
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
 
         # Initialize workflow tools
-        self.workflow_tools = WorkflowTools(
-            temp_dir=self.temp_dir,
-            logger=self.logger
-        ) if HAS_ALL_SUBTOOLS else None
+        self.workflow_tools = (
+            WorkflowTools(temp_dir=self.temp_dir, logger=self.logger)
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
 
         # Initialize documentation tools
-        self.documentation_tools = DocumentationTools(
-            docs_dir=self.docs_dir,
-            devdocs_url=_DEVDOCS_URL,
-            logger=self.logger
-        ) if HAS_ALL_SUBTOOLS else None
+        self.documentation_tools = (
+            DocumentationTools(
+                docs_dir=self.docs_dir, devdocs_url=_DEVDOCS_URL, logger=self.logger
+            )
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
 
         # Initialize web scraping and search tools
         if os.getenv("ENABLE_FIRECRAWL", "false") == "true":
             # self.firecrawl_tools = FirecrawlTools(logger=self.logger) if HAS_ALL_SUBTOOLS else None
             if os.getenv("ENABLE_LOCAL_FIRECRAWL") == "true" and os.getenv("LOCAL_URL"):
-                self.firecrawl_tools = FirecrawlTools(
-                    logger=self.logger,
-                    local_url=os.getenv("LOCAL_URL"),
-                    api_key=None
-                ) if HAS_ALL_SUBTOOLS else None
+                self.firecrawl_tools = (
+                    FirecrawlTools(
+                        logger=self.logger,
+                        local_url=os.getenv("LOCAL_URL"),
+                        api_key=None,
+                    )
+                    if HAS_ALL_SUBTOOLS
+                    else None
+                )
             else:
-                self.firecrawl_tools = FirecrawlTools(
-                    logger=self.logger,
-                    local_url="http://localhost:3002",
-                    api_key=os.getenv("FIRECRAWL_API_KEY")
-                ) if HAS_ALL_SUBTOOLS else None
+                self.firecrawl_tools = (
+                    FirecrawlTools(
+                        logger=self.logger,
+                        local_url="http://localhost:3002",
+                        api_key=os.getenv("FIRECRAWL_API_KEY"),
+                    )
+                    if HAS_ALL_SUBTOOLS
+                    else None
+                )
         else:
             self.firecrawl_tools = None
 
-        self.searxng_tools = SearXNGTools(searxng_url=_SEARXNG_URL, logger=self.logger) if HAS_ALL_SUBTOOLS else None
-
+        self.searxng_tools = (
+            SearXNGTools(searxng_url=_SEARXNG_URL, logger=self.logger)
+            if HAS_ALL_SUBTOOLS
+            else None
+        )
 
     def _register_all_tools(self):
         """Register all tools with the MCP server"""
@@ -347,7 +412,9 @@ class MCPDockerServer:
                 self.logger.info("Registered workflow automation tools")
 
             # Register documentation tools
-            if self.documentation_tools and self._get_config("documentation_tools", True):
+            if self.documentation_tools and self._get_config(
+                "documentation_tools", True
+            ):
                 self.documentation_tools.register_tools(self.mcp)
                 self.documentation_tools.register_resources(self.mcp)
                 self.logger.info("Registered documentation tools")
@@ -390,8 +457,7 @@ class MCPDockerServer:
                         "documentation": bool(self.documentation_tools),
                         "web_scraping": bool(self.firecrawl_tools),
                         "web_search": bool(self.searxng_tools),
-
-                        "gpu_support": self.gpu_available
+                        "gpu_support": self.gpu_available,
                     },
                     "configuration": {
                         "allowed_images_count": len(self.allowed_images),
@@ -399,18 +465,21 @@ class MCPDockerServer:
                         "docs_directory": str(self.docs_dir),
                         "devdocs_url": _DEVDOCS_URL,
                         "searxng_url": _SEARXNG_URL,
-
                     },
                     "system": {
                         "cpu_count": os.cpu_count(),
-                        "memory_gb": round(psutil.virtual_memory().total / (1024**3), 2),
-                        "platform": sys.platform
+                        "memory_gb": round(
+                            psutil.virtual_memory().total / (1024**3), 2
+                        ),
+                        "platform": sys.platform,
                     },
                     "docker": {
                         "connected": True,
-                        "version": self.docker_client.version().get("Version", "Unknown"),
-                        "active_containers": len(self.active_containers)
-                    }
+                        "version": self.docker_client.version().get(
+                            "Version", "Unknown"
+                        ),
+                        "active_containers": len(self.active_containers),
+                    },
                 }
                 return json.dumps(info, indent=2)
             except Exception as e:
@@ -424,44 +493,59 @@ class MCPDockerServer:
                     "overall_status": "healthy",
                     "timestamp": datetime.now().isoformat(),
                     "services": {
-                        "docker": {"status": "healthy", "details": "Connected and responsive"},
-                        "mcp_server": {"status": "healthy", "details": "All tools registered"},
-                        "file_system": {"status": "healthy", "details": "All directories accessible"},
+                        "docker": {
+                            "status": "healthy",
+                            "details": "Connected and responsive",
+                        },
+                        "mcp_server": {
+                            "status": "healthy",
+                            "details": "All tools registered",
+                        },
+                        "file_system": {
+                            "status": "healthy",
+                            "details": "All directories accessible",
+                        },
                     },
                     "system_resources": {
                         "cpu_percent": psutil.cpu_percent(),
                         "memory_percent": psutil.virtual_memory().percent,
-                        "disk_percent": psutil.disk_usage('/').percent
-                    }
+                        "disk_percent": psutil.disk_usage("/").percent,
+                    },
                 }
 
                 # Check external services
                 if self.documentation_tools:
                     try:
                         import requests
+
                         response = requests.get(_DEVDOCS_URL, timeout=5)
                         health["services"]["devdocs"] = {
-                            "status": "healthy" if response.status_code == 200 else "degraded",
-                            "details": f"HTTP {response.status_code}"
+                            "status": (
+                                "healthy" if response.status_code == 200 else "degraded"
+                            ),
+                            "details": f"HTTP {response.status_code}",
                         }
                     except Exception:
                         health["services"]["devdocs"] = {
                             "status": "unavailable",
-                            "details": "Service not reachable"
+                            "details": "Service not reachable",
                         }
 
                 if self.searxng_tools:
                     try:
                         import requests
+
                         response = requests.get(_SEARXNG_URL, timeout=5)
                         health["services"]["searxng"] = {
-                            "status": "healthy" if response.status_code == 200 else "degraded",
-                            "details": f"HTTP {response.status_code}"
+                            "status": (
+                                "healthy" if response.status_code == 200 else "degraded"
+                            ),
+                            "details": f"HTTP {response.status_code}",
                         }
                     except Exception:
                         health["services"]["searxng"] = {
                             "status": "unavailable",
-                            "details": "Service not reachable"
+                            "details": "Service not reachable",
                         }
 
                 return json.dumps(health, indent=2)
@@ -478,13 +562,13 @@ class MCPDockerServer:
 
         # Create handlers
         file_handler = logging.handlers.RotatingFileHandler(
-            log_file, maxBytes=10*1024*1024, backupCount=5  # 10MB files, keep 5
+            log_file, maxBytes=10 * 1024 * 1024, backupCount=5  # 10MB files, keep 5
         )
         console_handler = logging.StreamHandler()
 
         # Create formatter
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
@@ -500,8 +584,11 @@ class MCPDockerServer:
 
         try:
             import subprocess
+
             # Check NVIDIA
-            result = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(
+                ["nvidia-smi"], capture_output=True, text=True, timeout=5
+            )
             if result.returncode == 0:
                 gpu_info["has_gpu"] = True
                 gpu_info["type"] = "nvidia"
@@ -511,7 +598,9 @@ class MCPDockerServer:
 
         try:
             # Check AMD ROCm
-            result = subprocess.run(["rocm-smi"], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(
+                ["rocm-smi"], capture_output=True, text=True, timeout=5
+            )
             if result.returncode == 0:
                 gpu_info["has_gpu"] = True
                 gpu_info["type"] = "amd_rocm"
@@ -539,6 +628,7 @@ class MCPDockerServer:
 
             # Clean up temp directory
             import shutil
+
             if os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
 
@@ -546,10 +636,10 @@ class MCPDockerServer:
             self.executor.shutdown(wait=True)
 
         except Exception as e:
-            if hasattr(self, 'logger'):
+            if hasattr(self, "logger"):
                 self.logger.error(f"Error during cleanup: {e}")
 
-        if hasattr(self, 'logger'):
+        if hasattr(self, "logger"):
             self.logger.info("MCP Docker Server cleanup completed")
 
     def run(self, transport_method: str = "stdio"):
@@ -565,21 +655,49 @@ class MCPDockerServer:
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description="MCP Docker Server - Enhanced Modular Edition")
-    parser.add_argument("--transport", default="stdio", choices=["stdio", "ws", "sse"],
-                       help="Transport method for MCP communication")
-    parser.add_argument("--host", default="localhost", help="Host for WebSocket/SSE transport")
-    parser.add_argument("--port", type=int, default=8000, help="Port for WebSocket/SSE transport")
+    parser = argparse.ArgumentParser(
+        description="MCP Docker Server - Enhanced Modular Edition"
+    )
+    parser.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "ws", "sse"],
+        help="Transport method for MCP communication",
+    )
+    parser.add_argument(
+        "--host", default="localhost", help="Host for WebSocket/SSE transport"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8000, help="Port for WebSocket/SSE transport"
+    )
     parser.add_argument("--config", help="Path to configuration file")
-    parser.add_argument("--disable-docker", action="store_true", help="Disable Docker management")
-    parser.add_argument("--disable-browser", action="store_true", help="Disable browser automation")
-    parser.add_argument("--disable-monitoring", action="store_true", help="Disable monitoring tools")
-    parser.add_argument("--disable-dev", action="store_true", help="Disable development tools")
-    parser.add_argument("--disable-workflow", action="store_true", help="Disable workflow tools")
-    parser.add_argument("--disable-docs", action="store_true", help="Disable documentation tools")
-    parser.add_argument("--disable-firecrawl", action="store_true", help="Disable Firecrawl tools")
-    parser.add_argument("--disable-searxng", action="store_true", help="Disable SearXNG tools")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "--disable-docker", action="store_true", help="Disable Docker management"
+    )
+    parser.add_argument(
+        "--disable-browser", action="store_true", help="Disable browser automation"
+    )
+    parser.add_argument(
+        "--disable-monitoring", action="store_true", help="Disable monitoring tools"
+    )
+    parser.add_argument(
+        "--disable-dev", action="store_true", help="Disable development tools"
+    )
+    parser.add_argument(
+        "--disable-workflow", action="store_true", help="Disable workflow tools"
+    )
+    parser.add_argument(
+        "--disable-docs", action="store_true", help="Disable documentation tools"
+    )
+    parser.add_argument(
+        "--disable-firecrawl", action="store_true", help="Disable Firecrawl tools"
+    )
+    parser.add_argument(
+        "--disable-searxng", action="store_true", help="Disable SearXNG tools"
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
+    )
 
     args = parser.parse_args()
 
@@ -609,7 +727,9 @@ def main():
         if args.verbose:
             server.logger.setLevel(logging.DEBUG)
 
-        server.logger.info(f"Starting MCP Docker Server with transport: {args.transport}")
+        server.logger.info(
+            f"Starting MCP Docker Server with transport: {args.transport}"
+        )
         server.logger.info(f"Configuration: {service_config}")
 
         return server.run(transport_method=args.transport)
@@ -621,7 +741,7 @@ def main():
         print(f"Failed to start server: {e}")
         return 1
     finally:
-        if 'server' in locals():
+        if "server" in locals():
             server.cleanup()
 
 

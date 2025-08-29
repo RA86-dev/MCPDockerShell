@@ -3,7 +3,7 @@
 # Multi-architecture support - optimized for ARM64/Apple Silicon
 FROM python:3.11.13-bookworm
 
-LABEL version="1.0.0" 
+LABEL version="1.0.0"
 LABEL description="A large developer focused MCP server for running with AI more easily."
 LABEL author='RA86-dev'
 
@@ -16,14 +16,14 @@ RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get update --fix-missing || apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 \
-        python3-pip \
-        python3-venv \
-        curl \
-        wget \
-        gnupg \
-        ca-certificates \
-        && \
+    python3 \
+    python3-pip \
+    python3-venv \
+    curl \
+    wget \
+    gnupg \
+    ca-certificates \
+    && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -38,8 +38,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install -r requirements.txt
 
 # Install Playwright and dependencies
-RUN playwright install chromium firefox webkit
 RUN playwright install-deps
+RUN playwright install chromium firefox webkit
 
 # Copy the source code into the container
 COPY . .
