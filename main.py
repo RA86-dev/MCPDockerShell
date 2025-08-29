@@ -29,8 +29,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
-_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888")
-_ntfysh = os.getenv("NTFY_SERVER","http://localhost:8081") 
+_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888") 
 uptime_launched = datetime.now()
 
 # Import all our modular tools
@@ -43,6 +42,7 @@ try:
     from subtools.documentation_tools import DocumentationTools
     from subtools.firecrawl_tools import FirecrawlTools
     from subtools.searxng_tools import SearXNGTools
+    from subtools.module_finder import ModuleFinder
     HAS_ALL_SUBTOOLS = True
 except ImportError as e:
     print(f"Warning: Some subtools could not be imported: {e}")
@@ -101,7 +101,8 @@ class ServiceConfig:
     firecrawl_tools: bool = True
     searxng_tools: bool = True
     notification_tools: bool = True
-    websocket_enabled: bool = False
+    websocket_enabled: bool = False,
+    module_Finder: bool=True
     security_level: SecurityLevel = SecurityLevel.MEDIUM
     auto_cleanup_enabled: bool = True
     health_checks_enabled: bool = True
@@ -253,6 +254,9 @@ class MCPDockerServer:
             temp_dir=self.temp_dir,
             logger=self.logger
         ) if HAS_ALL_SUBTOOLS else None
+        self.module_finder = ModuleFinder(
+            
+        ) if HAS_ALL_SUBTOOLS else None
 
         # Initialize browser tools
         self.browser_tools = BrowserTools(
@@ -320,7 +324,9 @@ class MCPDockerServer:
             if self.docker_tools and self._get_config("docker_management", True):
                 self.docker_tools.register_tools(self.mcp)
                 self.logger.info("Registered Docker management tools")
-
+            if self.module_finder and self._get_config("module_finder", True):
+                self.module_finder.add_tools(self.mcp)
+                self.logger.info("Registered Module Finder tools")
             # Register browser automation tools
             if self.browser_tools and self._get_config("browser_automation", True):
                 self.browser_tools.register_tools(self.mcp)

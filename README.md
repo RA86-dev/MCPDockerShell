@@ -93,10 +93,4 @@ If running on a server or using Cloudflare Tunnel, update the IP addresses in `c
 
 For detailed setup instructions, visit the [Model Context Protocol Quick Start Guide](http://modelcontextprotocol.io/quickstart/user).
 
-## 💡 Getting the Best Results
 
-Check out `prompt.md` for optimized prompts designed specifically for this MCP server. The XML format helps AI assistants understand different sections and capabilities more effectively.
-
----
-
-For more information, check the Documentation folder [here](documentation/main.md).

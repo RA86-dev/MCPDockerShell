@@ -1,2 +1,2 @@
-SERVER_VERSION = "1.0.0"
-SERVER_NICKNAME = "Beta Release 2"
+SERVER_VERSION = "1.2.5"
+SERVER_NICKNAME = "Version 1.2.5 - Stability Update"
