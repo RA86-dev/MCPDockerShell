@@ -394,7 +394,7 @@ class MCPDockerServer:
                         "docs_directory": str(self.docs_dir),
                         "devdocs_url": _DEVDOCS_URL,
                         "searxng_url": _SEARXNG_URL,
-                        "ntfy_url": _ntfysh
+                        
                     },
                     "system": {
                         "cpu_count": os.cpu_count(),

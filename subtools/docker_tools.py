@@ -15,7 +15,7 @@ from pathlib import Path
 
 class DockerTools:
     """Core Docker management functionality"""
-
+ 
     def __init__(self, docker_client, allowed_images: set, temp_dir: str, logger=None):
         self.docker_client = docker_client
         self.allowed_images = allowed_images

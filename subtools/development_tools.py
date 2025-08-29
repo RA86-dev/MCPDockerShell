@@ -15,18 +15,14 @@ class DevelopmentTools:
         self.active_containers = active_containers
         self.temp_dir = Path(temp_dir)
         self.logger = logger
-        self.ntfy_client = ntfyClient(
-            base_url=baseurl
-        )
+        
         
     def register_tools(self, mcp_server):
         """Register development tools with the MCP server"""
         
         @mcp_server.tool()
         async def create_dev_environment(language: str, project_name: str, features: List[str] = None) -> str:
-            self.ntfy_client.send_message(
-                ""
-            )
+            
             """Create a development environment with pre-configured tools"""
             try:
                 # Language-specific base images
