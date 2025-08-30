@@ -76,6 +76,7 @@ services:
     environment:
       - DEVDOCS_URL=http://devdocs:9292
       - SEARXNG_URL=http://searxng:8080
+      - REDIS_URL=http://redis:6397
       # --- Firecrawl [Local] ---
       # - FIRECRAWL_URL=http://firecrawl:3002
       # - ENABLE_FIRECRAWL=true
@@ -84,9 +85,20 @@ services:
       # - FIRECRAWL_API_KEY=<API_KEY_HERE>
       # Comment ENABLE_FIRECRAWL=false out if you are using the top two Firecrawl subfeatures
       - ENABLE_FIRECRAWL=false
-
+      - ENABLE_MCP_OAUTH=false # Set to true to enable OAuth authentication
+      # - MCP_OAUTH_CLIENT_SECRET=<CHANGE_ME>
+      # - MCP_OAUTH_CLIENT_ID=<CHANGE_ME>
+      # - MCP_OAUTH_CLIENT_NAME="MCP Docker Dev Server"
+      # - ENABLE_MCP_OAUTH=true 
+      # - MCP_OAUTH_CLIENT_SECRET=abc123xyz789secretkey
+      # - MCP_OAUTH_TOKEN_EXPIRY=3600
+      # - MCP_OAUTH_SCOPE=read write admin 
+      # - MCP_OAUTH_REQUIRE_HTTPS=false # Set to true in production with HTTPS
   redis:
     image: redis:alpine
+    ports:
+      - 6397:6379
+    restart: always
     volumes:
       - redis-data:/data
     networks:

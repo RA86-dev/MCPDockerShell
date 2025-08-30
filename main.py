@@ -4,13 +4,11 @@ f"""
 Name: MCPDevServer
 Version: {sv.SERVER_VERSION}
 """
-from fastapi import FastAPI, Request
 import docker
 import tempfile
 import os
 import argparse
 import secrets
-import uvicorn
 import sys
 import json
 import time
@@ -31,6 +29,24 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
 _SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888")
+IfMCPOauth = os.getenv("ENABLE_MCP_OAUTH", "false").lower() == "true"
+
+# Enhanced OAuth Configuration
+OAUTH_CONFIG = {
+    "issuer": os.getenv("MCP_OAUTH_ISSUER", "http://localhost:8000"),
+    "audience": os.getenv("MCP_OAUTH_AUDIENCE", "mcpdocker"),
+    "jwks_uri": os.getenv("MCP_OAUTH_JWKS_URI", "http://localhost:8000/.well-known/jwks.json"),
+    "token_endpoint": os.getenv("MCP_OAUTH_TOKEN_ENDPOINT", "http://localhost:8000/oauth/token"),
+    "authorization_endpoint": os.getenv("MCP_OAUTH_AUTH_ENDPOINT", "http://localhost:8000/oauth/authorize"),
+    "client_id": os.getenv("MCP_OAUTH_CLIENT_ID", "mcpdocker-client"),
+    "client_secret": os.getenv("MCP_OAUTH_CLIENT_SECRET"),
+    "scope": os.getenv("MCP_OAUTH_SCOPE", "read write admin"),
+    "token_expiry": int(os.getenv("MCP_OAUTH_TOKEN_EXPIRY", "3600")),
+    "refresh_token_expiry": int(os.getenv("MCP_OAUTH_REFRESH_TOKEN_EXPIRY", "86400")),
+    "enable_pkce": os.getenv("MCP_OAUTH_ENABLE_PKCE", "true").lower() == "true",
+    "require_https": os.getenv("MCP_OAUTH_REQUIRE_HTTPS", "false").lower() == "true",
+}
+
 uptime_launched = datetime.now()
 
 # Import all our modular tools
@@ -60,11 +76,18 @@ except ImportError:
 
 try:
     import jose
+    from jose import jwt, JWTError
+    from authlib.integrations.fastapi_oauth2 import AuthorizationServer, ResourceProtector
+    from authlib.oauth2.rfc6749 import grants
+    from authlib.common.security import generate_token
+    import httpx
 
     HAS_JOSE = True
+    HAS_OAUTH_LIBS = True
 
 except ImportError:
     HAS_JOSE = False
+    HAS_OAUTH_LIBS = False
 
 # Configuration
 SECRET_KEY = os.getenv("MCP_SECRET_KEY", secrets.token_hex(32))
@@ -136,13 +159,207 @@ class HealthStatus(BaseModel):
     last_check: datetime = Field(default_factory=datetime.now)
 
 
+class OAuthToken(BaseModel):
+    """OAuth token model"""
+    access_token: str
+    token_type: str = "Bearer"
+    expires_in: int
+    refresh_token: Optional[str] = None
+    scope: Optional[str] = None
+
+
+class OAuthTokenClaims(BaseModel):
+    """OAuth token claims model"""
+    sub: str
+    aud: str
+    iss: str
+    exp: int
+    iat: int
+    scope: Optional[str] = None
+    client_id: Optional[str] = None
+
+
+class OAuthClient(BaseModel):
+    """OAuth client model"""
+    client_id: str
+    client_secret: Optional[str] = None
+    grant_types: List[str] = Field(default_factory=lambda: ["authorization_code", "refresh_token"])
+    redirect_uris: List[str] = Field(default_factory=list)
+    scope: str = "read write"
+    response_types: List[str] = Field(default_factory=lambda: ["code"])
+
+
+class OAuthManager:
+    """Enhanced OAuth management with comprehensive features"""
+    
+    def __init__(self, config: dict, logger=None):
+        self.config = config
+        self.logger = logger or logging.getLogger(__name__)
+        self.clients = {}
+        self.tokens = TTLCache(maxsize=1000, ttl=config.get("token_expiry", 3600))
+        self.refresh_tokens = TTLCache(maxsize=1000, ttl=config.get("refresh_token_expiry", 86400))
+        
+        # Register default client if configured
+        if config.get("client_id") and config.get("client_secret"):
+            self.register_client(OAuthClient(
+                client_id=config["client_id"],
+                client_secret=config["client_secret"],
+                scope=config.get("scope", "read write admin")
+            ))
+    
+    def register_client(self, client: OAuthClient):
+        """Register an OAuth client"""
+        self.clients[client.client_id] = client
+        self.logger.info(f"Registered OAuth client: {client.client_id}")
+    
+    def generate_access_token(self, client_id: str, user_id: str, scope: str = None) -> OAuthToken:
+        """Generate an access token"""
+        now = datetime.utcnow()
+        expires_in = self.config.get("token_expiry", 3600)
+        
+        claims = {
+            "sub": user_id,
+            "aud": self.config["audience"],
+            "iss": self.config["issuer"],
+            "exp": now + timedelta(seconds=expires_in),
+            "iat": now,
+            "client_id": client_id,
+        }
+        
+        if scope:
+            claims["scope"] = scope
+        
+        access_token = jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)
+        refresh_token = generate_token(48) if self.config.get("refresh_token_expiry") else None
+        
+        token = OAuthToken(
+            access_token=access_token,
+            expires_in=expires_in,
+            refresh_token=refresh_token,
+            scope=scope
+        )
+        
+        # Cache the token
+        self.tokens[access_token] = {
+            "claims": claims,
+            "client_id": client_id,
+            "user_id": user_id,
+            "scope": scope
+        }
+        
+        if refresh_token:
+            self.refresh_tokens[refresh_token] = {
+                "client_id": client_id,
+                "user_id": user_id,
+                "scope": scope
+            }
+        
+        return token
+    
+    def validate_token(self, token: str) -> Optional[OAuthTokenClaims]:
+        """Validate an access token"""
+        try:
+            # Check cache first
+            if token in self.tokens:
+                token_data = self.tokens[token]
+                return OAuthTokenClaims(**token_data["claims"])
+            
+            # Decode and validate JWT
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            
+            # Validate required claims
+            if payload.get("aud") != self.config["audience"]:
+                raise JWTError("Invalid audience")
+            
+            if payload.get("iss") != self.config["issuer"]:
+                raise JWTError("Invalid issuer")
+            
+            # Check expiration
+            exp = payload.get("exp")
+            if not exp or datetime.utcfromtimestamp(exp) < datetime.utcnow():
+                raise JWTError("Token expired")
+            
+            claims = OAuthTokenClaims(**payload)
+            
+            # Cache the validated token
+            self.tokens[token] = {
+                "claims": payload,
+                "client_id": payload.get("client_id"),
+                "user_id": payload.get("sub"),
+                "scope": payload.get("scope")
+            }
+            
+            return claims
+            
+        except JWTError as e:
+            self.logger.warning(f"Token validation failed: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Token validation error: {e}")
+            return None
+    
+    def refresh_access_token(self, refresh_token: str) -> Optional[OAuthToken]:
+        """Refresh an access token using refresh token"""
+        if refresh_token not in self.refresh_tokens:
+            return None
+        
+        token_data = self.refresh_tokens[refresh_token]
+        return self.generate_access_token(
+            client_id=token_data["client_id"],
+            user_id=token_data["user_id"],
+            scope=token_data["scope"]
+        )
+    
+    def has_scope(self, token_claims: OAuthTokenClaims, required_scope: str) -> bool:
+        """Check if token has required scope"""
+        if not token_claims.scope:
+            return False
+        
+        token_scopes = set(token_claims.scope.split())
+        required_scopes = set(required_scope.split())
+        
+        return required_scopes.issubset(token_scopes)
+    
+    def revoke_token(self, token: str):
+        """Revoke an access token"""
+        if token in self.tokens:
+            del self.tokens[token]
+            self.logger.info("Token revoked successfully")
+    
+    async def fetch_jwks(self) -> Optional[dict]:
+        """Fetch JWKS from the configured URI"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.config["jwks_uri"], timeout=10.0)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            self.logger.error(f"Failed to fetch JWKS: {e}")
+            return None
+
+
+def oauth_required(scopes: List[str] = None):
+    """Decorator for OAuth-protected endpoints"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            # This would be implemented as FastAPI dependency in a real scenario
+            # For MCP tools, we'll add scope checking in the tool registration
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
 class MCPDockerServer:
     """Modular MCP Docker Server with pluggable tool modules"""
 
     def __init__(self, service_config: ServiceConfig = None):
         self.service_config = service_config or ServiceConfig()
-        self.mcp = FastMCP("MCPDocker-Enhanced", host="0.0.0.0")
-
+        self.mcp = FastMCP(
+            "MCPDocker-Enhanced",
+            host="0.0.0.0",
+            version=sv.SERVER_VERSION
+        )
+        
         # Initialize directory structure
         script_dir = Path(__file__).parent
         self.docs_dir = script_dir / "documentation"
@@ -161,6 +378,21 @@ class MCPDockerServer:
 
         # Initialize logging
         self.setup_enhanced_logging()
+
+        # Initialize OAuth manager if enabled
+        self.oauth_manager = None
+        if IfMCPOauth and HAS_OAUTH_LIBS:
+            self.oauth_manager = OAuthManager(OAUTH_CONFIG, logger=self.logger)
+            self.mcp.oauth(
+                issuer=OAUTH_CONFIG["issuer"],
+                audience=OAUTH_CONFIG["audience"],
+                jwks_uri=OAUTH_CONFIG["jwks_uri"],
+            )
+            self.logger.info(f"OAuth authentication enabled with issuer: {OAUTH_CONFIG['issuer']}")
+        elif IfMCPOauth and not HAS_OAUTH_LIBS:
+            self.logger.warning("OAuth requested but required libraries not available")
+        else:
+            self.logger.info("OAuth authentication disabled")
 
         # Initialize core components
         self._init_docker_client()
@@ -240,10 +472,6 @@ class MCPDockerServer:
             "nginx:alpine",
             "httpd:latest",
             "httpd:alpine",
-            # Development tools
-            "jenkins/jenkins:lts",
-            "gitlab/gitlab-ce:latest",
-            "portainer/portainer-ce:latest",
         }
 
         # Add GPU images if available
@@ -430,12 +658,166 @@ class MCPDockerServer:
 
             # Register notification tools
 
+            # Register OAuth tools if enabled
+            if self.oauth_manager:
+                self._register_oauth_tools()
+
             # Register basic utility tools
             self._register_utility_tools()
 
         except Exception as e:
             self.logger.error(f"Failed to register tools: {e}")
             raise
+
+    def _register_oauth_tools(self):
+        """Register OAuth management tools"""
+        
+        @self.mcp.tool()
+        async def oauth_generate_token(client_id: str, user_id: str, scope: str = "read") -> str:
+            """Generate an OAuth access token for a client and user"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                if client_id not in self.oauth_manager.clients:
+                    return f"Client {client_id} not found"
+                
+                token = self.oauth_manager.generate_access_token(client_id, user_id, scope)
+                self.logger.info(f"Generated OAuth token for user {user_id}, client {client_id}")
+                
+                return json.dumps({
+                    "access_token": token.access_token,
+                    "token_type": token.token_type,
+                    "expires_in": token.expires_in,
+                    "scope": token.scope,
+                    "refresh_token": token.refresh_token
+                }, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error generating OAuth token: {e}")
+                return f"Error generating token: {str(e)}"
+
+        @self.mcp.tool()
+        async def oauth_validate_token(token: str) -> str:
+            """Validate an OAuth access token"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                claims = self.oauth_manager.validate_token(token)
+                if not claims:
+                    return "Token is invalid or expired"
+                
+                return json.dumps({
+                    "valid": True,
+                    "subject": claims.sub,
+                    "audience": claims.aud,
+                    "issuer": claims.iss,
+                    "expires": claims.exp,
+                    "issued_at": claims.iat,
+                    "scope": claims.scope,
+                    "client_id": claims.client_id
+                }, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error validating OAuth token: {e}")
+                return f"Error validating token: {str(e)}"
+
+        @self.mcp.tool()
+        async def oauth_refresh_token(refresh_token: str) -> str:
+            """Refresh an OAuth access token using refresh token"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                new_token = self.oauth_manager.refresh_access_token(refresh_token)
+                if not new_token:
+                    return "Refresh token is invalid or expired"
+                
+                self.logger.info("OAuth token refreshed successfully")
+                
+                return json.dumps({
+                    "access_token": new_token.access_token,
+                    "token_type": new_token.token_type,
+                    "expires_in": new_token.expires_in,
+                    "scope": new_token.scope,
+                    "refresh_token": new_token.refresh_token
+                }, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error refreshing OAuth token: {e}")
+                return f"Error refreshing token: {str(e)}"
+
+        @self.mcp.tool()
+        async def oauth_revoke_token(token: str) -> str:
+            """Revoke an OAuth access token"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                self.oauth_manager.revoke_token(token)
+                return "Token revoked successfully"
+                
+            except Exception as e:
+                self.logger.error(f"Error revoking OAuth token: {e}")
+                return f"Error revoking token: {str(e)}"
+
+        @self.mcp.tool()
+        async def oauth_register_client(client_id: str, client_secret: str = None, scope: str = "read write", redirect_uris: List[str] = None) -> str:
+            """Register a new OAuth client"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                client = OAuthClient(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    scope=scope,
+                    redirect_uris=redirect_uris or []
+                )
+                
+                self.oauth_manager.register_client(client)
+                
+                return json.dumps({
+                    "client_id": client.client_id,
+                    "scope": client.scope,
+                    "grant_types": client.grant_types,
+                    "response_types": client.response_types,
+                    "message": "Client registered successfully"
+                }, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error registering OAuth client: {e}")
+                return f"Error registering client: {str(e)}"
+
+        @self.mcp.tool()
+        async def oauth_get_config() -> str:
+            """Get current OAuth configuration"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                # Return safe configuration (no secrets)
+                safe_config = {
+                    "issuer": OAUTH_CONFIG["issuer"],
+                    "audience": OAUTH_CONFIG["audience"],
+                    "authorization_endpoint": OAUTH_CONFIG["authorization_endpoint"],
+                    "token_endpoint": OAUTH_CONFIG["token_endpoint"],
+                    "jwks_uri": OAUTH_CONFIG["jwks_uri"],
+                    "scope": OAUTH_CONFIG["scope"],
+                    "token_expiry": OAUTH_CONFIG["token_expiry"],
+                    "refresh_token_expiry": OAUTH_CONFIG["refresh_token_expiry"],
+                    "enable_pkce": OAUTH_CONFIG["enable_pkce"],
+                    "require_https": OAUTH_CONFIG["require_https"],
+                    "registered_clients": len(self.oauth_manager.clients),
+                    "active_tokens": len(self.oauth_manager.tokens)
+                }
+                
+                return json.dumps(safe_config, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error getting OAuth config: {e}")
+                return f"Error getting config: {str(e)}"
 
     def _register_utility_tools(self):
         """Register basic utility tools"""
@@ -457,6 +839,7 @@ class MCPDockerServer:
                         "documentation": bool(self.documentation_tools),
                         "web_scraping": bool(self.firecrawl_tools),
                         "web_search": bool(self.searxng_tools),
+                        "oauth_authentication": bool(self.oauth_manager),
                         "gpu_support": self.gpu_available,
                     },
                     "configuration": {
@@ -465,6 +848,9 @@ class MCPDockerServer:
                         "docs_directory": str(self.docs_dir),
                         "devdocs_url": _DEVDOCS_URL,
                         "searxng_url": _SEARXNG_URL,
+                        "oauth_enabled": bool(self.oauth_manager),
+                        "oauth_clients_count": len(self.oauth_manager.clients) if self.oauth_manager else 0,
+                        "oauth_active_tokens": len(self.oauth_manager.tokens) if self.oauth_manager else 0,
                     },
                     "system": {
                         "cpu_count": os.cpu_count(),
@@ -500,6 +886,10 @@ class MCPDockerServer:
                         "mcp_server": {
                             "status": "healthy",
                             "details": "All tools registered",
+                        },
+                        "oauth_server": {
+                            "status": "healthy" if self.oauth_manager else "disabled",
+                            "details": f"OAuth enabled with {len(self.oauth_manager.clients) if self.oauth_manager else 0} clients" if self.oauth_manager else "OAuth authentication disabled",
                         },
                         "file_system": {
                             "status": "healthy",
