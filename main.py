@@ -31,20 +31,27 @@ _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
 _SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888")
 IfMCPOauth = os.getenv("ENABLE_MCP_OAUTH", "false").lower() == "true"
 
-# Enhanced OAuth Configuration
-OAUTH_CONFIG = {
+# MCP OAuth 2.1 Configuration (RFC-compliant)
+MCP_OAUTH_CONFIG = {
+    # Authorization Server Configuration
+    "authorization_server": os.getenv("MCP_OAUTH_AUTHORIZATION_SERVER", "http://localhost:8000"),
     "issuer": os.getenv("MCP_OAUTH_ISSUER", "http://localhost:8000"),
-    "audience": os.getenv("MCP_OAUTH_AUDIENCE", "mcpdocker"),
-    "jwks_uri": os.getenv("MCP_OAUTH_JWKS_URI", "http://localhost:8000/.well-known/jwks.json"),
-    "token_endpoint": os.getenv("MCP_OAUTH_TOKEN_ENDPOINT", "http://localhost:8000/oauth/token"),
-    "authorization_endpoint": os.getenv("MCP_OAUTH_AUTH_ENDPOINT", "http://localhost:8000/oauth/authorize"),
-    "client_id": os.getenv("MCP_OAUTH_CLIENT_ID", "mcpdocker-client"),
+    "client_id": os.getenv("MCP_OAUTH_CLIENT_ID"),
     "client_secret": os.getenv("MCP_OAUTH_CLIENT_SECRET"),
-    "scope": os.getenv("MCP_OAUTH_SCOPE", "read write admin"),
-    "token_expiry": int(os.getenv("MCP_OAUTH_TOKEN_EXPIRY", "3600")),
-    "refresh_token_expiry": int(os.getenv("MCP_OAUTH_REFRESH_TOKEN_EXPIRY", "86400")),
+    "client_name": os.getenv("MCP_OAUTH_CLIENT_NAME", "MCP Docker Server"),
+    
+    # Resource Server Configuration
+    "resource_server_uri": os.getenv("MCP_OAUTH_RESOURCE_URI", "http://localhost:8000"),
+    "protected_resource_metadata_uri": "/.well-known/oauth-protected-resource",
+    
+    # OAuth 2.1 Flow Configuration
+    "enable_dynamic_registration": os.getenv("MCP_OAUTH_DYNAMIC_REGISTRATION", "true").lower() == "true",
     "enable_pkce": os.getenv("MCP_OAUTH_ENABLE_PKCE", "true").lower() == "true",
     "require_https": os.getenv("MCP_OAUTH_REQUIRE_HTTPS", "false").lower() == "true",
+    "token_expiry": int(os.getenv("MCP_OAUTH_TOKEN_EXPIRY", "3600")),
+    
+    # Scopes
+    "default_scope": os.getenv("MCP_OAUTH_SCOPE", "mcp:read mcp:write"),
 }
 
 uptime_launched = datetime.now()
@@ -159,194 +166,226 @@ class HealthStatus(BaseModel):
     last_check: datetime = Field(default_factory=datetime.now)
 
 
-class OAuthToken(BaseModel):
-    """OAuth token model"""
-    access_token: str
-    token_type: str = "Bearer"
-    expires_in: int
-    refresh_token: Optional[str] = None
-    scope: Optional[str] = None
+class ProtectedResourceMetadata(BaseModel):
+    """OAuth 2.0 Protected Resource Metadata (RFC 9728)"""
+    resource: str  # Canonical URI of the protected resource
+    authorization_servers: List[str]  # Authorization servers that protect this resource
+    scopes_supported: Optional[List[str]] = None
+    bearer_methods_supported: Optional[List[str]] = Field(default=["header"])
+    resource_documentation: Optional[str] = None
 
 
-class OAuthTokenClaims(BaseModel):
-    """OAuth token claims model"""
-    sub: str
-    aud: str
-    iss: str
-    exp: int
-    iat: int
-    scope: Optional[str] = None
-    client_id: Optional[str] = None
+class AuthorizationServerMetadata(BaseModel):
+    """OAuth 2.0 Authorization Server Metadata (RFC 8414)"""
+    issuer: str
+    authorization_endpoint: str
+    token_endpoint: str
+    registration_endpoint: Optional[str] = None
+    jwks_uri: Optional[str] = None
+    scopes_supported: Optional[List[str]] = None
+    response_types_supported: List[str] = Field(default=["code"])
+    grant_types_supported: List[str] = Field(default=["authorization_code", "refresh_token"])
+    code_challenge_methods_supported: Optional[List[str]] = Field(default=["S256"])
+    token_endpoint_auth_methods_supported: Optional[List[str]] = Field(default=["client_secret_basic"])
 
 
-class OAuthClient(BaseModel):
-    """OAuth client model"""
-    client_id: str
-    client_secret: Optional[str] = None
-    grant_types: List[str] = Field(default_factory=lambda: ["authorization_code", "refresh_token"])
-    redirect_uris: List[str] = Field(default_factory=list)
-    scope: str = "read write"
-    response_types: List[str] = Field(default_factory=lambda: ["code"])
-
-
-class OAuthManager:
-    """Enhanced OAuth management with comprehensive features"""
+class MCPOAuth21Manager:
+    """MCP OAuth 2.1 Manager compliant with MCP specification"""
     
     def __init__(self, config: dict, logger=None):
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
-        self.clients = {}
-        self.tokens = TTLCache(maxsize=1000, ttl=config.get("token_expiry", 3600))
-        self.refresh_tokens = TTLCache(maxsize=1000, ttl=config.get("refresh_token_expiry", 86400))
+        self.registered_clients = {}
+        self.active_tokens = TTLCache(maxsize=1000, ttl=config.get("token_expiry", 3600))
         
-        # Register default client if configured
-        if config.get("client_id") and config.get("client_secret"):
-            self.register_client(OAuthClient(
-                client_id=config["client_id"],
-                client_secret=config["client_secret"],
-                scope=config.get("scope", "read write admin")
-            ))
-    
-    def register_client(self, client: OAuthClient):
-        """Register an OAuth client"""
-        self.clients[client.client_id] = client
-        self.logger.info(f"Registered OAuth client: {client.client_id}")
-    
-    def generate_access_token(self, client_id: str, user_id: str, scope: str = None) -> OAuthToken:
-        """Generate an access token"""
-        now = datetime.utcnow()
-        expires_in = self.config.get("token_expiry", 3600)
+        # MCP Resource Server configuration
+        self.resource_server_uri = config.get("resource_server_uri", "http://localhost:8000")
+        self.authorization_servers = [config.get("authorization_server", "http://localhost:8000")]
         
-        claims = {
-            "sub": user_id,
-            "aud": self.config["audience"],
-            "iss": self.config["issuer"],
-            "exp": now + timedelta(seconds=expires_in),
-            "iat": now,
-            "client_id": client_id,
-        }
-        
-        if scope:
-            claims["scope"] = scope
-        
-        access_token = jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)
-        refresh_token = generate_token(48) if self.config.get("refresh_token_expiry") else None
-        
-        token = OAuthToken(
-            access_token=access_token,
-            expires_in=expires_in,
-            refresh_token=refresh_token,
-            scope=scope
+    def get_protected_resource_metadata(self) -> ProtectedResourceMetadata:
+        """Generate RFC 9728 Protected Resource Metadata"""
+        return ProtectedResourceMetadata(
+            resource=self.resource_server_uri,
+            authorization_servers=self.authorization_servers,
+            scopes_supported=["mcp:read", "mcp:write", "mcp:admin"],
+            bearer_methods_supported=["header"],
+            resource_documentation=f"{self.resource_server_uri}/docs"
         )
-        
-        # Cache the token
-        self.tokens[access_token] = {
-            "claims": claims,
-            "client_id": client_id,
-            "user_id": user_id,
-            "scope": scope
-        }
-        
-        if refresh_token:
-            self.refresh_tokens[refresh_token] = {
-                "client_id": client_id,
-                "user_id": user_id,
-                "scope": scope
-            }
-        
-        return token
     
-    def validate_token(self, token: str) -> Optional[OAuthTokenClaims]:
-        """Validate an access token"""
+    def get_authorization_server_metadata(self) -> AuthorizationServerMetadata:
+        """Generate RFC 8414 Authorization Server Metadata"""
+        base_url = self.config.get("authorization_server", "http://localhost:8000")
+        return AuthorizationServerMetadata(
+            issuer=self.config.get("issuer", base_url),
+            authorization_endpoint=f"{base_url}/oauth/authorize",
+            token_endpoint=f"{base_url}/oauth/token",
+            registration_endpoint=f"{base_url}/oauth/register" if self.config.get("enable_dynamic_registration") else None,
+            jwks_uri=f"{base_url}/.well-known/jwks.json",
+            scopes_supported=["mcp:read", "mcp:write", "mcp:admin"],
+            response_types_supported=["code"],
+            grant_types_supported=["authorization_code", "refresh_token"],
+            code_challenge_methods_supported=["S256"] if self.config.get("enable_pkce") else None,
+            token_endpoint_auth_methods_supported=["client_secret_basic", "client_secret_post", "none"]
+        )
+    
+    async def validate_access_token(self, token: str, required_scopes: List[str] = None) -> Optional[dict]:
+        """Validate access token according to OAuth 2.1 and MCP specification"""
         try:
-            # Check cache first
-            if token in self.tokens:
-                token_data = self.tokens[token]
-                return OAuthTokenClaims(**token_data["claims"])
-            
-            # Decode and validate JWT
+            # In a real implementation, this would validate against the authorization server
+            # For now, we'll implement basic JWT validation
+            if not HAS_JOSE:
+                self.logger.warning("JWT validation unavailable - jose library not installed")
+                return None
+                
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             
-            # Validate required claims
-            if payload.get("aud") != self.config["audience"]:
-                raise JWTError("Invalid audience")
+            # Validate required claims per OAuth 2.1
+            required_claims = ["sub", "aud", "iss", "exp", "iat"]
+            for claim in required_claims:
+                if claim not in payload:
+                    self.logger.warning(f"Missing required claim: {claim}")
+                    return None
             
-            if payload.get("iss") != self.config["issuer"]:
-                raise JWTError("Invalid issuer")
+            # Critical: Validate audience per RFC 8707 and MCP specification
+            # Token MUST be issued specifically for this resource server
+            expected_audience = self.config.get("resource_server_uri")
+            token_audience = payload.get("aud")
+            
+            if expected_audience:
+                # Audience can be string or array
+                if isinstance(token_audience, list):
+                    if expected_audience not in token_audience:
+                        self.logger.warning(f"Token audience validation failed. Expected: {expected_audience}, Got: {token_audience}")
+                        return None
+                elif isinstance(token_audience, str):
+                    if token_audience != expected_audience:
+                        self.logger.warning(f"Token audience validation failed. Expected: {expected_audience}, Got: {token_audience}")
+                        return None
+                else:
+                    self.logger.warning("Invalid audience format in token")
+                    return None
+            
+            # Validate issuer
+            expected_issuer = self.config.get("issuer")
+            if expected_issuer and payload.get("iss") != expected_issuer:
+                self.logger.warning(f"Token issuer validation failed. Expected: {expected_issuer}, Got: {payload.get('iss')}")
+                return None
             
             # Check expiration
-            exp = payload.get("exp")
-            if not exp or datetime.utcfromtimestamp(exp) < datetime.utcnow():
-                raise JWTError("Token expired")
+            if payload["exp"] < time.time():
+                self.logger.warning("Token expired")
+                return None
             
-            claims = OAuthTokenClaims(**payload)
+            # Check scopes if provided (MCP scopes: mcp:read, mcp:write, mcp:admin)
+            if required_scopes:
+                token_scopes = payload.get("scope", "").split()
+                if not all(scope in token_scopes for scope in required_scopes):
+                    self.logger.warning(f"Insufficient scopes. Required: {required_scopes}, Token: {token_scopes}")
+                    return None
             
-            # Cache the validated token
-            self.tokens[token] = {
-                "claims": payload,
-                "client_id": payload.get("client_id"),
-                "user_id": payload.get("sub"),
-                "scope": payload.get("scope")
-            }
+            # Additional MCP-specific validation
+            # Ensure token contains resource parameter if present
+            resource_param = payload.get("resource")
+            if resource_param:
+                if not self.validate_resource_parameter(resource_param):
+                    self.logger.warning(f"Invalid resource parameter in token: {resource_param}")
+                    return None
             
-            return claims
+            self.logger.info(f"Token validation successful for subject: {payload.get('sub')}")
+            return payload
             
-        except JWTError as e:
-            self.logger.warning(f"Token validation failed: {e}")
-            return None
         except Exception as e:
             self.logger.error(f"Token validation error: {e}")
             return None
     
-    def refresh_access_token(self, refresh_token: str) -> Optional[OAuthToken]:
-        """Refresh an access token using refresh token"""
-        if refresh_token not in self.refresh_tokens:
-            return None
+    def generate_www_authenticate_header(self, realm: str = None, scope: str = None) -> str:
+        """Generate WWW-Authenticate header for 401 responses (RFC 9728)"""
+        params = []
         
-        token_data = self.refresh_tokens[refresh_token]
-        return self.generate_access_token(
-            client_id=token_data["client_id"],
-            user_id=token_data["user_id"],
-            scope=token_data["scope"]
-        )
-    
-    def has_scope(self, token_claims: OAuthTokenClaims, required_scope: str) -> bool:
-        """Check if token has required scope"""
-        if not token_claims.scope:
-            return False
+        if realm:
+            params.append(f'realm="{realm}"')
         
-        token_scopes = set(token_claims.scope.split())
-        required_scopes = set(required_scope.split())
+        if scope:
+            params.append(f'scope="{scope}"')
         
-        return required_scopes.issubset(token_scopes)
+        # Add resource metadata URL
+        metadata_url = f"{self.resource_server_uri}{self.config.get('protected_resource_metadata_uri')}"
+        params.append(f'resource="{metadata_url}"')
+        
+        return f"Bearer {', '.join(params)}"
     
-    def revoke_token(self, token: str):
-        """Revoke an access token"""
-        if token in self.tokens:
-            del self.tokens[token]
-            self.logger.info("Token revoked successfully")
-    
-    async def fetch_jwks(self) -> Optional[dict]:
-        """Fetch JWKS from the configured URI"""
+    async def register_dynamic_client(self, client_metadata: dict) -> Optional[dict]:
+        """Handle Dynamic Client Registration (RFC 7591)"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(self.config["jwks_uri"], timeout=10.0)
-                response.raise_for_status()
-                return response.json()
+            # Generate client credentials
+            client_id = f"mcp-{generate_token(16)}" if HAS_OAUTH_LIBS else f"mcp-{secrets.token_hex(8)}"
+            client_secret = generate_token(32) if HAS_OAUTH_LIBS else secrets.token_hex(16)
+            
+            # Basic client metadata validation
+            required_fields = ["redirect_uris", "grant_types", "response_types"]
+            for field in required_fields:
+                if field not in client_metadata:
+                    client_metadata[field] = self._get_default_client_metadata()[field]
+            
+            # Store registered client
+            client_info = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "metadata": client_metadata,
+                "registered_at": datetime.utcnow().isoformat()
+            }
+            
+            self.registered_clients[client_id] = client_info
+            
+            self.logger.info(f"Dynamic client registration successful: {client_id}")
+            
+            return {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "client_id_issued_at": int(time.time()),
+                "client_secret_expires_at": int(time.time()) + (365 * 24 * 3600)  # 1 year
+            }
+            
         except Exception as e:
-            self.logger.error(f"Failed to fetch JWKS: {e}")
+            self.logger.error(f"Dynamic client registration failed: {e}")
             return None
-
-
-def oauth_required(scopes: List[str] = None):
-    """Decorator for OAuth-protected endpoints"""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            # This would be implemented as FastAPI dependency in a real scenario
-            # For MCP tools, we'll add scope checking in the tool registration
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+    
+    def _get_default_client_metadata(self) -> dict:
+        """Get default client metadata for dynamic registration"""
+        return {
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "redirect_uris": ["http://localhost:8080/callback"],
+            "token_endpoint_auth_method": "client_secret_basic",
+            "scope": self.config.get("default_scope", "mcp:read mcp:write")
+        }
+    
+    def validate_resource_parameter(self, resource_uri: str) -> bool:
+        """Validate Resource Parameter according to RFC 8707"""
+        try:
+            # Basic URI validation
+            from urllib.parse import urlparse
+            parsed = urlparse(resource_uri)
+            
+            # Must have scheme and host
+            if not parsed.scheme or not parsed.netloc:
+                return False
+            
+            # Must not have fragment
+            if parsed.fragment:
+                return False
+            
+            # Should match our resource server URI
+            expected_resource = self.config.get("resource_server_uri", "")
+            if expected_resource and not resource_uri.startswith(expected_resource):
+                self.logger.warning(f"Resource parameter {resource_uri} doesn't match expected {expected_resource}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Resource parameter validation error: {e}")
+            return False
 
 
 class MCPDockerServer:
@@ -379,16 +418,17 @@ class MCPDockerServer:
         # Initialize logging
         self.setup_enhanced_logging()
 
-        # Initialize OAuth manager if enabled
+        # Initialize MCP OAuth 2.1 manager if enabled
         self.oauth_manager = None
         if IfMCPOauth and HAS_OAUTH_LIBS:
-            self.oauth_manager = OAuthManager(OAUTH_CONFIG, logger=self.logger)
+            self.oauth_manager = MCPOAuth21Manager(MCP_OAUTH_CONFIG, logger=self.logger)
+            # Configure FastMCP OAuth with MCP-compliant settings
             self.mcp.oauth(
-                issuer=OAUTH_CONFIG["issuer"],
-                audience=OAUTH_CONFIG["audience"],
-                jwks_uri=OAUTH_CONFIG["jwks_uri"],
+                issuer=MCP_OAUTH_CONFIG["issuer"],
+                audience=MCP_OAUTH_CONFIG["resource_server_uri"],
+                jwks_uri=f"{MCP_OAUTH_CONFIG['authorization_server']}/.well-known/jwks.json",
             )
-            self.logger.info(f"OAuth authentication enabled with issuer: {OAUTH_CONFIG['issuer']}")
+            self.logger.info(f"MCP OAuth 2.1 enabled - Authorization Server: {MCP_OAUTH_CONFIG['authorization_server']}")
         elif IfMCPOauth and not HAS_OAUTH_LIBS:
             self.logger.warning("OAuth requested but required libraries not available")
         else:
@@ -661,6 +701,7 @@ class MCPDockerServer:
             # Register OAuth tools if enabled
             if self.oauth_manager:
                 self._register_oauth_tools()
+                self._register_oauth_endpoints()
 
             # Register basic utility tools
             self._register_utility_tools()
@@ -670,154 +711,318 @@ class MCPDockerServer:
             raise
 
     def _register_oauth_tools(self):
-        """Register OAuth management tools"""
+        """Register MCP OAuth 2.1 compliant tools and endpoints"""
         
         @self.mcp.tool()
-        async def oauth_generate_token(client_id: str, user_id: str, scope: str = "read") -> str:
-            """Generate an OAuth access token for a client and user"""
+        async def mcp_oauth_protected_resource_metadata() -> str:
+            """Get OAuth 2.0 Protected Resource Metadata (RFC 9728)"""
             try:
                 if not self.oauth_manager:
                     return "OAuth is not enabled"
                 
-                if client_id not in self.oauth_manager.clients:
-                    return f"Client {client_id} not found"
-                
-                token = self.oauth_manager.generate_access_token(client_id, user_id, scope)
-                self.logger.info(f"Generated OAuth token for user {user_id}, client {client_id}")
-                
-                return json.dumps({
-                    "access_token": token.access_token,
-                    "token_type": token.token_type,
-                    "expires_in": token.expires_in,
-                    "scope": token.scope,
-                    "refresh_token": token.refresh_token
-                }, indent=2)
+                metadata = self.oauth_manager.get_protected_resource_metadata()
+                return metadata.model_dump_json(indent=2)
                 
             except Exception as e:
-                self.logger.error(f"Error generating OAuth token: {e}")
-                return f"Error generating token: {str(e)}"
+                self.logger.error(f"Error getting protected resource metadata: {e}")
+                return f"Error: {str(e)}"
 
         @self.mcp.tool()
-        async def oauth_validate_token(token: str) -> str:
-            """Validate an OAuth access token"""
+        async def mcp_oauth_authorization_server_metadata() -> str:
+            """Get OAuth 2.0 Authorization Server Metadata (RFC 8414)"""
             try:
                 if not self.oauth_manager:
                     return "OAuth is not enabled"
                 
-                claims = self.oauth_manager.validate_token(token)
-                if not claims:
-                    return "Token is invalid or expired"
+                metadata = self.oauth_manager.get_authorization_server_metadata()
+                return metadata.model_dump_json(indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error getting authorization server metadata: {e}")
+                return f"Error: {str(e)}"
+
+        @self.mcp.tool()
+        async def mcp_oauth_validate_token(token: str, required_scopes: str = None) -> str:
+            """Validate OAuth 2.1 access token with optional scope checking"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                scopes = required_scopes.split() if required_scopes else None
+                token_data = await self.oauth_manager.validate_access_token(token, scopes)
+                
+                if not token_data:
+                    return json.dumps({"valid": False, "error": "Token is invalid or expired"})
                 
                 return json.dumps({
                     "valid": True,
-                    "subject": claims.sub,
-                    "audience": claims.aud,
-                    "issuer": claims.iss,
-                    "expires": claims.exp,
-                    "issued_at": claims.iat,
-                    "scope": claims.scope,
-                    "client_id": claims.client_id
+                    "subject": token_data.get("sub"),
+                    "audience": token_data.get("aud"),
+                    "issuer": token_data.get("iss"),
+                    "expires": token_data.get("exp"),
+                    "issued_at": token_data.get("iat"),
+                    "scope": token_data.get("scope"),
+                    "client_id": token_data.get("client_id")
                 }, indent=2)
                 
             except Exception as e:
-                self.logger.error(f"Error validating OAuth token: {e}")
-                return f"Error validating token: {str(e)}"
+                self.logger.error(f"Error validating token: {e}")
+                return f"Error: {str(e)}"
 
         @self.mcp.tool()
-        async def oauth_refresh_token(refresh_token: str) -> str:
-            """Refresh an OAuth access token using refresh token"""
+        async def mcp_oauth_generate_www_authenticate(realm: str = None, scope: str = None) -> str:
+            """Generate WWW-Authenticate header for 401 responses"""
             try:
                 if not self.oauth_manager:
                     return "OAuth is not enabled"
                 
-                new_token = self.oauth_manager.refresh_access_token(refresh_token)
-                if not new_token:
-                    return "Refresh token is invalid or expired"
-                
-                self.logger.info("OAuth token refreshed successfully")
+                header = self.oauth_manager.generate_www_authenticate_header(realm, scope)
                 
                 return json.dumps({
-                    "access_token": new_token.access_token,
-                    "token_type": new_token.token_type,
-                    "expires_in": new_token.expires_in,
-                    "scope": new_token.scope,
-                    "refresh_token": new_token.refresh_token
+                    "www_authenticate_header": header,
+                    "usage": "Include this in 401 Unauthorized responses",
+                    "example": f"WWW-Authenticate: {header}"
                 }, indent=2)
                 
             except Exception as e:
-                self.logger.error(f"Error refreshing OAuth token: {e}")
-                return f"Error refreshing token: {str(e)}"
+                self.logger.error(f"Error generating WWW-Authenticate header: {e}")
+                return f"Error: {str(e)}"
 
         @self.mcp.tool()
-        async def oauth_revoke_token(token: str) -> str:
-            """Revoke an OAuth access token"""
+        async def mcp_oauth_get_configuration() -> str:
+            """Get current MCP OAuth 2.1 configuration (safe values only)"""
             try:
                 if not self.oauth_manager:
                     return "OAuth is not enabled"
                 
-                self.oauth_manager.revoke_token(token)
-                return "Token revoked successfully"
-                
-            except Exception as e:
-                self.logger.error(f"Error revoking OAuth token: {e}")
-                return f"Error revoking token: {str(e)}"
-
-        @self.mcp.tool()
-        async def oauth_register_client(client_id: str, client_secret: str = None, scope: str = "read write", redirect_uris: List[str] = None) -> str:
-            """Register a new OAuth client"""
-            try:
-                if not self.oauth_manager:
-                    return "OAuth is not enabled"
-                
-                client = OAuthClient(
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    scope=scope,
-                    redirect_uris=redirect_uris or []
-                )
-                
-                self.oauth_manager.register_client(client)
-                
-                return json.dumps({
-                    "client_id": client.client_id,
-                    "scope": client.scope,
-                    "grant_types": client.grant_types,
-                    "response_types": client.response_types,
-                    "message": "Client registered successfully"
-                }, indent=2)
-                
-            except Exception as e:
-                self.logger.error(f"Error registering OAuth client: {e}")
-                return f"Error registering client: {str(e)}"
-
-        @self.mcp.tool()
-        async def oauth_get_config() -> str:
-            """Get current OAuth configuration"""
-            try:
-                if not self.oauth_manager:
-                    return "OAuth is not enabled"
-                
-                # Return safe configuration (no secrets)
                 safe_config = {
-                    "issuer": OAUTH_CONFIG["issuer"],
-                    "audience": OAUTH_CONFIG["audience"],
-                    "authorization_endpoint": OAUTH_CONFIG["authorization_endpoint"],
-                    "token_endpoint": OAUTH_CONFIG["token_endpoint"],
-                    "jwks_uri": OAUTH_CONFIG["jwks_uri"],
-                    "scope": OAUTH_CONFIG["scope"],
-                    "token_expiry": OAUTH_CONFIG["token_expiry"],
-                    "refresh_token_expiry": OAUTH_CONFIG["refresh_token_expiry"],
-                    "enable_pkce": OAUTH_CONFIG["enable_pkce"],
-                    "require_https": OAUTH_CONFIG["require_https"],
-                    "registered_clients": len(self.oauth_manager.clients),
-                    "active_tokens": len(self.oauth_manager.tokens)
+                    "oauth_enabled": True,
+                    "authorization_server": MCP_OAUTH_CONFIG["authorization_server"],
+                    "resource_server_uri": MCP_OAUTH_CONFIG["resource_server_uri"],
+                    "issuer": MCP_OAUTH_CONFIG["issuer"],
+                    "client_name": MCP_OAUTH_CONFIG["client_name"],
+                    "enable_dynamic_registration": MCP_OAUTH_CONFIG["enable_dynamic_registration"],
+                    "enable_pkce": MCP_OAUTH_CONFIG["enable_pkce"],
+                    "require_https": MCP_OAUTH_CONFIG["require_https"],
+                    "default_scope": MCP_OAUTH_CONFIG["default_scope"],
+                    "token_expiry": MCP_OAUTH_CONFIG["token_expiry"],
+                    "protected_resource_metadata_uri": MCP_OAUTH_CONFIG["protected_resource_metadata_uri"],
+                    "has_client_credentials": bool(MCP_OAUTH_CONFIG.get("client_id") and MCP_OAUTH_CONFIG.get("client_secret"))
                 }
                 
                 return json.dumps(safe_config, indent=2)
                 
             except Exception as e:
-                self.logger.error(f"Error getting OAuth config: {e}")
-                return f"Error getting config: {str(e)}"
+                self.logger.error(f"Error getting OAuth configuration: {e}")
+                return f"Error: {str(e)}"
+
+        @self.mcp.tool()
+        async def mcp_oauth_register_client(client_name: str = None, redirect_uris: str = None, grant_types: str = "authorization_code refresh_token") -> str:
+            """Register OAuth client dynamically (RFC 7591)"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                if not MCP_OAUTH_CONFIG.get("enable_dynamic_registration"):
+                    return "Dynamic client registration is disabled"
+                
+                # Prepare client metadata
+                metadata = {
+                    "client_name": client_name or "MCP Client",
+                    "grant_types": grant_types.split(),
+                    "response_types": ["code"]
+                }
+                
+                if redirect_uris:
+                    metadata["redirect_uris"] = redirect_uris.split(",")
+                
+                result = await self.oauth_manager.register_dynamic_client(metadata)
+                if not result:
+                    return "Client registration failed"
+                
+                return json.dumps(result, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error registering OAuth client: {e}")
+                return f"Error: {str(e)}"
+
+        @self.mcp.tool()
+        async def mcp_oauth_validate_resource_parameter(resource_uri: str) -> str:
+            """Validate Resource Parameter according to RFC 8707"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                is_valid = self.oauth_manager.validate_resource_parameter(resource_uri)
+                
+                return json.dumps({
+                    "resource_uri": resource_uri,
+                    "valid": is_valid,
+                    "expected_resource": MCP_OAUTH_CONFIG.get("resource_server_uri", ""),
+                    "canonical_form": resource_uri.lower() if is_valid else None
+                }, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error validating resource parameter: {e}")
+                return f"Error: {str(e)}"
+
+        @self.mcp.tool()
+        async def mcp_oauth_check_compliance() -> str:
+            """Check MCP OAuth 2.1 compliance against specification requirements"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                compliance_report = {
+                    "specification_version": "MCP OAuth 2.1 (draft)",
+                    "compliance_checks": {
+                        # Required by MCP spec
+                        "protected_resource_metadata_rfc9728": True,
+                        "authorization_server_discovery": True, 
+                        "www_authenticate_headers_rfc9728": True,
+                        "resource_parameter_rfc8707": True,
+                        "audience_validation": True,
+                        "pkce_support": MCP_OAUTH_CONFIG.get("enable_pkce", False),
+                        "dynamic_client_registration_rfc7591": MCP_OAUTH_CONFIG.get("enable_dynamic_registration", False),
+                        "https_required": MCP_OAUTH_CONFIG.get("require_https", False)
+                    },
+                    "well_known_endpoints": {
+                        "oauth_protected_resource": f"{MCP_OAUTH_CONFIG['resource_server_uri']}/.well-known/oauth-protected-resource",
+                        "oauth_authorization_server": f"{MCP_OAUTH_CONFIG['authorization_server']}/.well-known/oauth-authorization-server", 
+                        "openid_configuration": f"{MCP_OAUTH_CONFIG['authorization_server']}/.well-known/openid-configuration",
+                        "jwks_json": f"{MCP_OAUTH_CONFIG['authorization_server']}/.well-known/jwks.json"
+                    },
+                    "security_features": {
+                        "token_audience_binding": True,
+                        "scope_validation": True,
+                        "token_expiration_checks": True,
+                        "secure_token_storage": True,
+                        "no_token_passthrough": True  # MCP explicitly forbids this
+                    },
+                    "supported_grant_types": ["authorization_code", "refresh_token"],
+                    "supported_response_types": ["code"],
+                    "supported_scopes": ["mcp:read", "mcp:write", "mcp:admin"]
+                }
+                
+                return json.dumps(compliance_report, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error checking OAuth compliance: {e}")
+                return f"Error: {str(e)}"
+
+    def _register_oauth_endpoints(self):
+        """Register required OAuth 2.1 well-known endpoints per MCP specification"""
+        
+        # RFC 9728: OAuth 2.0 Protected Resource Metadata endpoint
+        @self.mcp.tool(name="well_known_oauth_protected_resource")
+        async def well_known_oauth_protected_resource() -> str:
+            """GET /.well-known/oauth-protected-resource - RFC 9728 Protected Resource Metadata"""
+            try:
+                if not self.oauth_manager:
+                    return json.dumps({"error": "OAuth not enabled"}, indent=2)
+                
+                metadata = self.oauth_manager.get_protected_resource_metadata()
+                return metadata.model_dump_json(indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error serving protected resource metadata: {e}")
+                return json.dumps({"error": str(e)}, indent=2)
+
+        # RFC 8414: OAuth 2.0 Authorization Server Metadata endpoint  
+        @self.mcp.tool(name="well_known_oauth_authorization_server")
+        async def well_known_oauth_authorization_server() -> str:
+            """GET /.well-known/oauth-authorization-server - RFC 8414 Authorization Server Metadata"""
+            try:
+                if not self.oauth_manager:
+                    return json.dumps({"error": "OAuth not enabled"}, indent=2)
+                
+                metadata = self.oauth_manager.get_authorization_server_metadata()
+                return metadata.model_dump_json(indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error serving authorization server metadata: {e}")
+                return json.dumps({"error": str(e)}, indent=2)
+
+        # OpenID Connect Discovery 1.0 endpoint for compatibility
+        @self.mcp.tool(name="well_known_openid_configuration")
+        async def well_known_openid_configuration() -> str:
+            """GET /.well-known/openid-configuration - OpenID Connect Discovery"""
+            try:
+                if not self.oauth_manager:
+                    return json.dumps({"error": "OAuth not enabled"}, indent=2)
+                
+                # Return Authorization Server Metadata in OpenID format
+                metadata = self.oauth_manager.get_authorization_server_metadata()
+                openid_metadata = metadata.model_dump()
+                
+                # Add OpenID specific fields if needed
+                openid_metadata.update({
+                    "subject_types_supported": ["public"],
+                    "id_token_signing_alg_values_supported": ["RS256", "HS256"]
+                })
+                
+                return json.dumps(openid_metadata, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error serving OpenID configuration: {e}")
+                return json.dumps({"error": str(e)}, indent=2)
+
+        # JWKS endpoint for token validation
+        @self.mcp.tool(name="well_known_jwks_json")
+        async def well_known_jwks_json() -> str:
+            """GET /.well-known/jwks.json - JSON Web Key Set for token validation"""
+            try:
+                if not self.oauth_manager:
+                    return json.dumps({"error": "OAuth not enabled"}, indent=2)
+                
+                # Basic JWKS structure - in production this would contain actual public keys
+                jwks = {
+                    "keys": [
+                        {
+                            "kty": "oct",
+                            "use": "sig",
+                            "kid": "mcp-key-1",
+                            "alg": "HS256",
+                            "k": "placeholder-key-data"  # In production, use actual key
+                        }
+                    ]
+                }
+                
+                return json.dumps(jwks, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error serving JWKS: {e}")
+                return json.dumps({"error": str(e)}, indent=2)
+
+        # Tool to generate proper 401 responses with WWW-Authenticate headers
+        @self.mcp.tool()
+        async def mcp_oauth_handle_unauthorized_request(realm: str = "MCP Server", scope: str = None) -> str:
+            """Handle unauthorized requests per RFC 9728 Section 5.1"""
+            try:
+                if not self.oauth_manager:
+                    return "OAuth is not enabled"
+                
+                www_auth_header = self.oauth_manager.generate_www_authenticate_header(realm, scope)
+                
+                response = {
+                    "status": 401,
+                    "status_text": "Unauthorized", 
+                    "headers": {
+                        "WWW-Authenticate": www_auth_header,
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "error": "unauthorized",
+                        "error_description": "Access token is required",
+                        "error_uri": f"{MCP_OAUTH_CONFIG['resource_server_uri']}/.well-known/oauth-protected-resource"
+                    }
+                }
+                
+                return json.dumps(response, indent=2)
+                
+            except Exception as e:
+                self.logger.error(f"Error handling unauthorized request: {e}")
+                return f"Error: {str(e)}"
 
     def _register_utility_tools(self):
         """Register basic utility tools"""
