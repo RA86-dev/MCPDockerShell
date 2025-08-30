@@ -84,17 +84,24 @@ except ImportError:
 try:
     import jose
     from jose import jwt, JWTError
-    from authlib.integrations.fastapi_oauth2 import AuthorizationServer, ResourceProtector
-    from authlib.oauth2.rfc6749 import grants
-    from authlib.common.security import generate_token
     import httpx
-
     HAS_JOSE = True
-    HAS_OAUTH_LIBS = True
-
-except ImportError:
+except ImportError as e:
+    print(f"Warning: Jose/JWT library not available: {e}")
     HAS_JOSE = False
-    HAS_OAUTH_LIBS = False
+
+try:
+    from authlib.common.security import generate_token
+    HAS_AUTHLIB = True
+except ImportError as e:
+    print(f"Warning: Authlib not available: {e}")
+    HAS_AUTHLIB = False
+
+# Combined check for OAuth functionality
+HAS_OAUTH_LIBS = HAS_JOSE and HAS_AUTHLIB
+
+if not HAS_OAUTH_LIBS:
+    print(f"OAuth Libraries Status: JOSE={HAS_JOSE}, AUTHLIB={HAS_AUTHLIB}")
 
 # Configuration
 SECRET_KEY = os.getenv("MCP_SECRET_KEY", secrets.token_hex(32))
@@ -318,8 +325,12 @@ class MCPOAuth21Manager:
         """Handle Dynamic Client Registration (RFC 7591)"""
         try:
             # Generate client credentials
-            client_id = f"mcp-{generate_token(16)}" if HAS_OAUTH_LIBS else f"mcp-{secrets.token_hex(8)}"
-            client_secret = generate_token(32) if HAS_OAUTH_LIBS else secrets.token_hex(16)
+            if HAS_AUTHLIB:
+                client_id = f"mcp-{generate_token(16)}"
+                client_secret = generate_token(32)
+            else:
+                client_id = f"mcp-{secrets.token_hex(8)}"
+                client_secret = secrets.token_hex(16)
             
             # Basic client metadata validation
             required_fields = ["redirect_uris", "grant_types", "response_types"]
@@ -332,7 +343,7 @@ class MCPOAuth21Manager:
                 "client_id": client_id,
                 "client_secret": client_secret,
                 "metadata": client_metadata,
-                "registered_at": datetime.utcnow().isoformat()
+                "registered_at": datetime.now(datetime.timezone.utc).isoformat()
             }
             
             self.registered_clients[client_id] = client_info
@@ -396,7 +407,6 @@ class MCPDockerServer:
         self.mcp = FastMCP(
             "MCPDocker-Enhanced",
             host="0.0.0.0",
-            version=sv.SERVER_VERSION
         )
         
         # Initialize directory structure
