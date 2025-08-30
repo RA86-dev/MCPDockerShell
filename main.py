@@ -24,7 +24,10 @@ from cachetools import TTLCache
 from collections import defaultdict
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import Request, HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
@@ -49,6 +52,9 @@ MCP_OAUTH_CONFIG = {
     "enable_pkce": os.getenv("MCP_OAUTH_ENABLE_PKCE", "true").lower() == "true",
     "require_https": os.getenv("MCP_OAUTH_REQUIRE_HTTPS", "false").lower() == "true",
     "token_expiry": int(os.getenv("MCP_OAUTH_TOKEN_EXPIRY", "3600")),
+    
+    # Authentication Requirements (per MCP specification)
+    "require_authentication": os.getenv("MCP_OAUTH_REQUIRE_AUTH", "false").lower() == "true",
     
     # Scopes
     "default_scope": os.getenv("MCP_OAUTH_SCOPE", "mcp:read mcp:write"),
@@ -339,11 +345,12 @@ class MCPOAuth21Manager:
                     client_metadata[field] = self._get_default_client_metadata()[field]
             
             # Store registered client
+            from datetime import timezone
             client_info = {
                 "client_id": client_id,
                 "client_secret": client_secret,
                 "metadata": client_metadata,
-                "registered_at": datetime.now(datetime.timezone.utc).isoformat()
+                "registered_at": datetime.now(timezone.utc).isoformat()
             }
             
             self.registered_clients[client_id] = client_info
@@ -399,8 +406,67 @@ class MCPOAuth21Manager:
             return False
 
 
+def require_auth(required_scopes: List[str] = None):
+    """Decorator to require OAuth authentication for MCP tools per MCP specification"""
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            # Get the server instance from args
+            server_instance = None
+            for arg in args:
+                if hasattr(arg, 'oauth_manager'):
+                    server_instance = arg
+                    break
+            
+            if not server_instance or not server_instance.oauth_manager:
+                # OAuth not enabled, allow access
+                return await func(*args, **kwargs)
+            
+            # Check if authentication is required for this server
+            if not MCP_OAUTH_CONFIG.get("require_authentication", False):
+                # Authentication not required, allow access
+                return await func(*args, **kwargs)
+            
+            # Extract token from request context (this would be implementation-specific)
+            # For now, we'll simulate this - in real implementation, this would come from HTTP headers
+            auth_header = kwargs.get('authorization', '')
+            
+            if not auth_header or not auth_header.startswith('Bearer '):
+                # Return 401 Unauthorized per MCP spec (lines 122-123, 178-179)
+                www_auth = server_instance.oauth_manager.generate_www_authenticate_header()
+                return json.dumps({
+                    "error": "unauthorized", 
+                    "error_description": "Access token required",
+                    "www_authenticate": www_auth,
+                    "status": 401,
+                    "resource_metadata_url": f"{MCP_OAUTH_CONFIG['resource_server_uri']}/.well-known/oauth-protected-resource"
+                })
+            
+            # Extract token
+            token = auth_header.replace('Bearer ', '')
+            
+            # Validate token per OAuth 2.1 Section 5.2 (lines 278-285)
+            token_data = await server_instance.oauth_manager.validate_access_token(token, required_scopes)
+            
+            if not token_data:
+                # Invalid/expired token - return 401 per MCP spec
+                www_auth = server_instance.oauth_manager.generate_www_authenticate_header()
+                return json.dumps({
+                    "error": "invalid_token",
+                    "error_description": "The access token is invalid or expired", 
+                    "www_authenticate": www_auth,
+                    "status": 401
+                })
+            
+            # Token valid - proceed with request
+            kwargs['token_data'] = token_data
+            return await func(*args, **kwargs)
+        
+        return wrapper
+    return decorator
+
+
 class MCPDockerServer:
-    """Modular MCP Docker Server with pluggable tool modules"""
+    """Modular MCP Docker Server with pluggable tool modules - OAuth 2.1 Protected Resource"""
 
     def __init__(self, service_config: ServiceConfig = None):
         self.service_config = service_config or ServiceConfig()
@@ -432,13 +498,8 @@ class MCPDockerServer:
         self.oauth_manager = None
         if IfMCPOauth and HAS_OAUTH_LIBS:
             self.oauth_manager = MCPOAuth21Manager(MCP_OAUTH_CONFIG, logger=self.logger)
-            # Configure FastMCP OAuth with MCP-compliant settings
-            self.mcp.oauth(
-                issuer=MCP_OAUTH_CONFIG["issuer"],
-                audience=MCP_OAUTH_CONFIG["resource_server_uri"],
-                jwks_uri=f"{MCP_OAUTH_CONFIG['authorization_server']}/.well-known/jwks.json",
-            )
             self.logger.info(f"MCP OAuth 2.1 enabled - Authorization Server: {MCP_OAUTH_CONFIG['authorization_server']}")
+            self.logger.info("OAuth tools and endpoints will be available as MCP tools")
         elif IfMCPOauth and not HAS_OAUTH_LIBS:
             self.logger.warning("OAuth requested but required libraries not available")
         else:
@@ -539,6 +600,10 @@ class MCPDockerServer:
 
         # Initialize all tool modules
         self._init_tool_modules()
+
+        # Setup HTTP OAuth endpoints if enabled
+        if self.oauth_manager:
+            self._setup_oauth_http_endpoints()
 
         # Register all tools
         self._register_all_tools()
@@ -725,7 +790,7 @@ class MCPDockerServer:
         
         @self.mcp.tool()
         async def mcp_oauth_protected_resource_metadata() -> str:
-            """Get OAuth 2.0 Protected Resource Metadata (RFC 9728)"""
+            """Get OAuth 2.0 Protected Resource Metadata (RFC 9728) - No auth required per MCP spec"""
             try:
                 if not self.oauth_manager:
                     return "OAuth is not enabled"
@@ -1034,10 +1099,282 @@ class MCPDockerServer:
                 self.logger.error(f"Error handling unauthorized request: {e}")
                 return f"Error: {str(e)}"
 
+    def _setup_oauth_http_endpoints(self):
+        """Setup OAuth 2.1 HTTP endpoints for authorization flow"""
+        
+        # Add CORS middleware for OAuth endpoints
+        self.mcp.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # Configure appropriately for production
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+        )
+
+        # Bearer token security scheme
+        security = HTTPBearer(auto_error=False)
+        
+        async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+            """Extract and validate bearer token"""
+            if not credentials:
+                return None
+            
+            token_data = await self.oauth_manager.validate_access_token(credentials.credentials)
+            return token_data
+
+        # RFC 9728: Protected Resource Metadata
+        @self.mcp.app.get("/.well-known/oauth-protected-resource")
+        async def oauth_protected_resource():
+            """OAuth 2.0 Protected Resource Metadata endpoint (RFC 9728)"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            metadata = self.oauth_manager.get_protected_resource_metadata()
+            return JSONResponse(content=metadata.model_dump())
+
+        # RFC 8414: Authorization Server Metadata  
+        @self.mcp.app.get("/.well-known/oauth-authorization-server")
+        async def oauth_authorization_server():
+            """OAuth 2.0 Authorization Server Metadata endpoint (RFC 8414)"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            metadata = self.oauth_manager.get_authorization_server_metadata()
+            return JSONResponse(content=metadata.model_dump())
+
+        # OpenID Connect Discovery
+        @self.mcp.app.get("/.well-known/openid-configuration")
+        async def openid_configuration():
+            """OpenID Connect Discovery 1.0 endpoint"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            metadata = self.oauth_manager.get_authorization_server_metadata()
+            openid_metadata = metadata.model_dump()
+            
+            # Add OpenID specific fields
+            openid_metadata.update({
+                "subject_types_supported": ["public"],
+                "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+                "userinfo_endpoint": f"{MCP_OAUTH_CONFIG['authorization_server']}/oauth/userinfo"
+            })
+            
+            return JSONResponse(content=openid_metadata)
+
+        # JWKS endpoint
+        @self.mcp.app.get("/.well-known/jwks.json")
+        async def jwks_json():
+            """JSON Web Key Set for token validation"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            # Basic JWKS structure - in production use actual keys
+            jwks = {
+                "keys": [
+                    {
+                        "kty": "oct",
+                        "use": "sig", 
+                        "kid": "mcp-key-1",
+                        "alg": "HS256",
+                        "k": "placeholder-key-data"  # Replace with actual key
+                    }
+                ]
+            }
+            
+            return JSONResponse(content=jwks)
+
+        # OAuth Authorization endpoint
+        @self.mcp.app.get("/oauth/authorize")
+        async def oauth_authorize(request: Request):
+            """OAuth 2.1 Authorization endpoint with PKCE support"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            params = dict(request.query_params)
+            
+            # Basic parameter validation
+            required_params = ["client_id", "response_type", "redirect_uri", "code_challenge", "code_challenge_method"]
+            missing_params = [p for p in required_params if p not in params]
+            
+            if missing_params:
+                error_url = f"{params.get('redirect_uri', '#')}?error=invalid_request&error_description=Missing required parameters: {','.join(missing_params)}"
+                return RedirectResponse(url=error_url)
+            
+            # PKCE validation
+            if params.get("code_challenge_method") != "S256":
+                error_url = f"{params.get('redirect_uri')}?error=invalid_request&error_description=Only S256 code challenge method supported"
+                return RedirectResponse(url=error_url)
+            
+            # Generate authorization code
+            auth_code = secrets.token_urlsafe(32)
+            
+            # Store authorization code with PKCE challenge (simplified for demo)
+            self.oauth_manager.active_tokens[auth_code] = {
+                "client_id": params["client_id"],
+                "redirect_uri": params["redirect_uri"], 
+                "code_challenge": params["code_challenge"],
+                "code_challenge_method": params["code_challenge_method"],
+                "resource": params.get("resource"),
+                "scope": params.get("scope", "mcp:read"),
+                "created_at": time.time(),
+                "expires_at": time.time() + 600  # 10 minutes
+            }
+            
+            # Redirect with authorization code
+            redirect_url = f"{params['redirect_uri']}?code={auth_code}&state={params.get('state', '')}"
+            return RedirectResponse(url=redirect_url)
+
+        # OAuth Token endpoint
+        @self.mcp.app.post("/oauth/token")
+        async def oauth_token(request: Request):
+            """OAuth 2.1 Token endpoint with PKCE verification"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            form = await request.form()
+            params = dict(form)
+            
+            # Validate grant type
+            if params.get("grant_type") != "authorization_code":
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "unsupported_grant_type", "error_description": "Only authorization_code grant type supported"}
+                )
+            
+            # Get authorization code
+            auth_code = params.get("code")
+            if not auth_code or auth_code not in self.oauth_manager.active_tokens:
+                return JSONResponse(
+                    status_code=400, 
+                    content={"error": "invalid_grant", "error_description": "Invalid or expired authorization code"}
+                )
+            
+            code_data = self.oauth_manager.active_tokens[auth_code]
+            
+            # Verify PKCE
+            code_verifier = params.get("code_verifier")
+            if not code_verifier:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid_request", "error_description": "Missing code_verifier"}
+                )
+            
+            # Basic PKCE verification (simplified)
+            import hashlib, base64
+            challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).decode().rstrip('=')
+            if challenge != code_data["code_challenge"]:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+                )
+            
+            # Generate access token
+            now = int(time.time())
+            token_payload = {
+                "sub": "mcp-user",  # Subject
+                "aud": code_data.get("resource", MCP_OAUTH_CONFIG["resource_server_uri"]),  # Audience
+                "iss": MCP_OAUTH_CONFIG["issuer"],  # Issuer
+                "exp": now + MCP_OAUTH_CONFIG["token_expiry"],  # Expiration
+                "iat": now,  # Issued at
+                "scope": code_data["scope"],
+                "client_id": code_data["client_id"],
+                "resource": code_data.get("resource")
+            }
+            
+            if HAS_JOSE:
+                access_token = jwt.encode(token_payload, SECRET_KEY, algorithm=ALGORITHM)
+                refresh_token = jwt.encode(
+                    {**token_payload, "token_type": "refresh", "exp": now + (30 * 24 * 3600)},
+                    SECRET_KEY, 
+                    algorithm=ALGORITHM
+                )
+            else:
+                # Fallback if jose not available
+                access_token = secrets.token_urlsafe(32)
+                refresh_token = secrets.token_urlsafe(32)
+            
+            # Clean up authorization code
+            del self.oauth_manager.active_tokens[auth_code]
+            
+            return JSONResponse(content={
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": MCP_OAUTH_CONFIG["token_expiry"],
+                "refresh_token": refresh_token,
+                "scope": code_data["scope"]
+            })
+
+        # Dynamic Client Registration endpoint (RFC 7591)
+        @self.mcp.app.post("/oauth/register")
+        async def oauth_register(request: Request):
+            """Dynamic Client Registration endpoint (RFC 7591)"""
+            if not self.oauth_manager:
+                raise HTTPException(status_code=503, detail="OAuth not enabled")
+            
+            if not MCP_OAUTH_CONFIG.get("enable_dynamic_registration"):
+                raise HTTPException(status_code=501, detail="Dynamic registration not supported")
+            
+            try:
+                client_metadata = await request.json()
+            except Exception:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid_client_metadata", "error_description": "Invalid JSON in request body"}
+                )
+            
+            result = await self.oauth_manager.register_dynamic_client(client_metadata)
+            if not result:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid_client_metadata", "error_description": "Client registration failed"}
+                )
+            
+            return JSONResponse(content=result)
+
+        # OAuth Userinfo endpoint (optional)
+        @self.mcp.app.get("/oauth/userinfo")
+        async def oauth_userinfo(current_user=Depends(get_current_user)):
+            """OAuth 2.1 UserInfo endpoint"""
+            if not current_user:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Access token required",
+                    headers={"WWW-Authenticate": self.oauth_manager.generate_www_authenticate_header()}
+                )
+            
+            return JSONResponse(content={
+                "sub": current_user.get("sub"),
+                "preferred_username": "mcp-user",
+                "name": "MCP User", 
+                "given_name": "MCP",
+                "family_name": "User",
+                "email": "mcp-user@example.com"
+            })
+
+        # Test endpoint to verify OAuth protection
+        @self.mcp.app.get("/oauth/test")
+        async def oauth_test(current_user=Depends(get_current_user)):
+            """Protected test endpoint"""
+            if not current_user:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Access token required",
+                    headers={"WWW-Authenticate": self.oauth_manager.generate_www_authenticate_header()}
+                )
+            
+            return JSONResponse(content={
+                "message": "OAuth authentication successful!",
+                "user": current_user,
+                "timestamp": datetime.now().isoformat()
+            })
+
+        self.logger.info("OAuth 2.1 HTTP endpoints registered successfully")
+
     def _register_utility_tools(self):
         """Register basic utility tools"""
 
         @self.mcp.tool()
+        @require_auth(required_scopes=["mcp:read"])
         async def get_server_info() -> str:
             """Get comprehensive server information and capabilities"""
             try:
@@ -1064,8 +1401,8 @@ class MCPDockerServer:
                         "devdocs_url": _DEVDOCS_URL,
                         "searxng_url": _SEARXNG_URL,
                         "oauth_enabled": bool(self.oauth_manager),
-                        "oauth_clients_count": len(self.oauth_manager.clients) if self.oauth_manager else 0,
-                        "oauth_active_tokens": len(self.oauth_manager.tokens) if self.oauth_manager else 0,
+                        "oauth_clients_count": len(self.oauth_manager.registered_clients) if self.oauth_manager else 0,
+                        "oauth_active_tokens": len(self.oauth_manager.active_tokens) if self.oauth_manager else 0,
                     },
                     "system": {
                         "cpu_count": os.cpu_count(),
@@ -1104,7 +1441,7 @@ class MCPDockerServer:
                         },
                         "oauth_server": {
                             "status": "healthy" if self.oauth_manager else "disabled",
-                            "details": f"OAuth enabled with {len(self.oauth_manager.clients) if self.oauth_manager else 0} clients" if self.oauth_manager else "OAuth authentication disabled",
+                            "details": f"OAuth enabled with {len(self.oauth_manager.registered_clients) if self.oauth_manager else 0} clients" if self.oauth_manager else "OAuth authentication disabled",
                         },
                         "file_system": {
                             "status": "healthy",
