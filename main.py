@@ -27,8 +27,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 # Environment variables
-_DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://localhost:9292")
-_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8888")
+_DEVDOCS_URL = os.getenv("DEVDOCS_URL", "https://devdocs.io/")
+_SEARXNG_URL = os.getenv("SEARXNG_URL", "https://searxng.rwuser.space")
 uptime_launched = datetime.now()
 
 # Import all our modular tools
