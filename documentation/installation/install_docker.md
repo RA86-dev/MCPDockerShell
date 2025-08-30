@@ -189,7 +189,7 @@ Ensure these ports are accessible:
 
 - **8000**: MCP Server API
 - **9292**: DevDocs documentation server
-- **8888**: SearXNG search engine (optional)
+- **8888**: SearXNG search engine 
 
 **Ubuntu/Debian (ufw):**
 ```bash

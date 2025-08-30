@@ -143,9 +143,8 @@ class MCPDockerServer:
         self.mcp = FastMCP(
             "MCPDocker-Enhanced",
             host="0.0.0.0",
-            version=sv.SERVER_VERSION
+            
         )
-        # Intialize Authentication features.
 
         # Initialize directory structure
         script_dir = Path(__file__).parent
