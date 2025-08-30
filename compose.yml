@@ -85,19 +85,7 @@ services:
       # - FIRECRAWL_API_KEY=<API_KEY_HERE>
       # Comment ENABLE_FIRECRAWL=false out if you are using the top two Firecrawl subfeatures
       - ENABLE_FIRECRAWL=false
-      - ENABLE_MCP_OAUTH=true # OAuth 2.1 authentication enabled
-      - MCP_OAUTH_AUTHORIZATION_SERVER=http://mcp-server:8000 # Self-hosted auth server
-      - MCP_OAUTH_ISSUER=http://mcp-server:8000
-      - MCP_OAUTH_RESOURCE_URI=http://mcp-server:8000
-      - MCP_OAUTH_CLIENT_ID=mcp-docker-server-default
-      - MCP_OAUTH_CLIENT_SECRET=mcp_secret_key_change_in_production_2024
-      - MCP_OAUTH_CLIENT_NAME="MCP Docker Dev Server"
-      - MCP_OAUTH_TOKEN_EXPIRY=3600
-      - MCP_OAUTH_SCOPE=mcp:read mcp:write mcp:admin
-      - MCP_OAUTH_REQUIRE_HTTPS=false # Set to true in production with HTTPS
-      - MCP_OAUTH_DYNAMIC_REGISTRATION=true
-      - MCP_OAUTH_ENABLE_PKCE=true
-      - MCP_OAUTH_REQUIRE_AUTH=true # Require authentication for protected resources
+
   redis:
     image: redis:alpine
     ports:

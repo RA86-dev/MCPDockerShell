@@ -93,4 +93,3 @@ If running on a server or using Cloudflare Tunnel, update the IP addresses in `c
 
 For detailed setup instructions, visit the [Model Context Protocol Quick Start Guide](http://modelcontextprotocol.io/quickstart/user).
 
-

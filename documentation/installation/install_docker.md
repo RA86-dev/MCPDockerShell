@@ -182,25 +182,12 @@ sudo apt update && sudo apt install rocm-dkms
 
 ## Network Configuration
 
-### Basic Network Setup
-
-The default installation creates an isolated Docker network:
-
-```yaml
-# Network configuration in compose.yml
-networks:
-  mcp-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
-```
 
 ### Firewall Configuration
 
 Ensure these ports are accessible:
 
-- **3000**: MCP Server API
+- **8000**: MCP Server API
 - **9292**: DevDocs documentation server
 - **8888**: SearXNG search engine (optional)
 
