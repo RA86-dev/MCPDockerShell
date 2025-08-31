@@ -142,8 +142,7 @@ class MCPDockerServer:
         self.service_config = service_config or ServiceConfig()
         self.mcp = FastMCP(
             "MCPDocker-Enhanced",
-            host="0.0.0.0",
-            
+            host="0.0.0.0"
         )
 
         # Initialize directory structure

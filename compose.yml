@@ -3,7 +3,7 @@
 # Supported GPUS: AMD and NVIDIA GPU supported, Intel Not supported.
 # This services creates the server
 # NOTE: PLEASE CHECK FOR FEATURES YOU WANT
-#.                              #
+# Github Repository             #
 # Learn more in Documentation   #
 #                               #
 #                               #
@@ -86,15 +86,6 @@ services:
       # Comment ENABLE_FIRECRAWL=false out if you are using the top two Firecrawl subfeatures
       - ENABLE_FIRECRAWL=false
 
-  redis:
-    image: redis:alpine
-    ports:
-      - 6397:6379
-    restart: always
-    volumes:
-      - redis-data:/data
-    networks:
-      - mcp-network
 volumes:
   devdocs-data:
 
