@@ -659,7 +659,7 @@ def main():
     parser.add_argument(
         "--transport",
         default="stdio",
-        choices=["stdio", "ws", "sse"],
+        choices=["stdio", "ws", "sse","streamable-http"],
         help="Transport method for MCP communication",
     )
     parser.add_argument(
