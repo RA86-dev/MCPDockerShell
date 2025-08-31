@@ -74,17 +74,15 @@ services:
       - devdocs
       - searxng
     environment:
-      - DEVDOCS_URL=http://devdocs:9292
-      - SEARXNG_URL=http://searxng:8080
-      - REDIS_URL=http://redis:6397
+      DEVDOCS_URL: "http://devdocs:9292"
+      SEARXNG_URL: "http://searxng:8080"
+      REDIS_URL: "http://redis:6379"
+      ENABLE_FIRECRAWL: "false"
       # --- Firecrawl [Local] ---
-      # - FIRECRAWL_URL=http://firecrawl:3002
-      # - ENABLE_FIRECRAWL=true
+      # FIRECRAWL_URL: "http://firecrawl:3002"
+      # ENABLE_FIRECRAWL: "true"
       # --- Firecrawl [API] ---
-      # - ENABLE_FIRECRAWL=true
-      # - FIRECRAWL_API_KEY=<API_KEY_HERE>
-      # Comment ENABLE_FIRECRAWL=false out if you are using the top two Firecrawl subfeatures
-      - ENABLE_FIRECRAWL=false
+      # FIRECRAWL_API_KEY: "<API_KEY_HERE>"
 
   redis:
     image: redis:alpine
