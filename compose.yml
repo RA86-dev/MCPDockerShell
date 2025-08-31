@@ -75,7 +75,7 @@ services:
       - searxng
     environment:
       - DEVDOCS_URL=http://devdocs:9292
-      - SEARXNG_URL=http://searxng:8080
+      - SEARXNG_URL=http://searxng:8888
       - REDIS_URL=http://redis:6397
       # --- Firecrawl [Local] ---
       # - FIRECRAWL_URL=http://firecrawl:3002
