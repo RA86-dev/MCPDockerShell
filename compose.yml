@@ -3,141 +3,103 @@
 # Supported GPUS: AMD and NVIDIA GPU supported, Intel Not supported.
 # This services creates the server
 # NOTE: PLEASE CHECK FOR FEATURES YOU WANT
-# Github Repository
-# Learn more in Documentation
-################################
-
-version: '3.8'
+# Gituh#
+# Learn more in Documentation   #
+#                               #
+#                               #
+#################################
 
 services:
   searxng:
     image: docker.io/searxng/searxng:latest
-    container_name: mcp-searxng
     ports:
-      - "8888:8080"
+      - 8888:8080
     networks:
       - mcp-network
     volumes:
-      - searxng-config:/etc/searxng/
-      - searxng-data:/var/cache/searxng/
-      # Custom settings to enable API
-      - ./static_assets/settings.yml:/usr/local/searxng/searx/settings.yml:ro
-    environment:
-      - SEARXNG_BASE_URL=http://localhost:8888/
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+      - ./config:/etc/searxng/
+      - ./data:/var/cache/searxng/
+      - ./static_assets/settings.yml:/usr/local/searxng/searx/settings.yml # enable API features by replacing internal settings.yml with a modified version
+    restart: always
   devdocs:
     image: ghcr.io/freecodecamp/devdocs:latest-alpine
-    container_name: mcp-devdocs
+    container_name: devdocs
     ports:
-      - "9292:9292"
+      - 9292:9292
     networks:
       - mcp-network
     volumes:
       - devdocs-data:/app/.devdocs
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9292/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+    restart: always
   auto-sync:
     build:
       context: .
       dockerfile: Dockerfile.sync
-    container_name: mcp-devdocs-sync
+    container_name: devdocs-sync
     volumes:
       - devdocs-data:/app/.devdocs
     networks:
       - mcp-network
-    depends_on:
-      devdocs:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # Redis for caching (optional - only if needed by your setup)
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: mcp-redis
-  #   ports:
-  #     - "6379:6379"
-  #   networks:
-  #     - mcp-network
-  #   volumes:
-  #     - redis-data:/data
-  #   restart: unless-stopped
-
+    restart: always
   mcp-server:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: mcp-main-server
     privileged: true
-    restart: unless-stopped
+    restart: always
     ports:
-      - "8000:8000"
-    user: "0:0"
-    networks:
-      - mcp-network
-    depends_on:
-      searxng:
-        condition: service_healthy
-      devdocs:
-        condition: service_healthy
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - mcp-workspace:/workspace
-    environment:
-      - DEVDOCS_URL=http://mcp-devdocs:9292
-      - SEARXNG_URL=http://mcp-searxng:8080
-      - REDIS_URL=redis://mcp-redis:6379
-      
-      # --- External Firecrawl Server Configuration ---
-      - ENABLE_FIRECRAWL=${ENABLE_FIRECRAWL}
-      - FIRECRAWL_URL=${FIRECRAWL_URL}
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
-
-    # --- GPU support [NVIDIA] ---
-    # Uncomment this section if you want NVIDIA GPU support
+      - 8000:8000
+    user: "0:0" # Run as root to access Docker socket
+    # --- GPU support [NVIDIA] Uncomment this section out if you want these features ---
     # deploy:
     #   resources:
     #     reservations:
     #       devices:
     #         - driver: nvidia
-    #           count: all
+    #           count: all # (change this to the amount you want.)
     #           capabilities: [gpu]
-
     # --- GPU support [AMD] ---
-    # Uncomment this section if you want AMD GPU support  
     # deploy:
     #   resources:
     #     reservations:
     #       devices:
     #         - driver: rocm
-    #           count: all
+    #           count: all # or a seperate amount
     #           capabilities: [gpu]
 
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # giving access to Docker Socket
+    networks:
+      - mcp-network
+    depends_on:
+      - devdocs
+      - searxng
+    environment:
+      - DEVDOCS_URL=http://devdocs:9292
+      - SEARXNG_URL=http://searxng:8080
+      - REDIS_URL=http://redis:6397
+      # --- Firecrawl [Local] ---
+      # - FIRECRAWL_URL=http://firecrawl:3002
+      # - ENABLE_FIRECRAWL=true
+      # --- Firecrawl [API] ---
+      # - ENABLE_FIRECRAWL=true
+      # - FIRECRAWL_API_KEY=<API_KEY_HERE>
+      # Comment ENABLE_FIRECRAWL=false out if you are using the top two Firecrawl subfeatures
+      - ENABLE_FIRECRAWL=false
+
+  redis:
+    image: redis:alpine
+    ports:
+      - 6397:6379
+    restart: always
+    volumes:
+      - redis-data:/data
+    networks:
+      - mcp-network
 volumes:
   devdocs-data:
-    driver: local
-  searxng-config:
-    driver: local
-  searxng-data:
-    driver: local
+
   redis-data:
-    driver: local
-  mcp-workspace:
-    driver: local
 
 networks:
   mcp-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
