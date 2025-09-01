@@ -5,7 +5,7 @@
       "args": [
         "-y",
         "mcp-remote",
-        "http://127.0.0.1:8000/sse",
+        "http://xxx.xxx.xx.xxx:8000/sse",
         "--transport",
         "sse",
         "--allow-http"
