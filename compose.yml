@@ -78,7 +78,7 @@ services:
     environment:
       DEVDOCS_URL: "http://devdocs:9292"
       SEARXNG_URL: "http://searxng:8080"
-      REDIS_URL: "redis://redis:6379"
+      REDIS_URL: "http://redis:6379"
       ENABLE_FIRECRAWL: "false"
       # --- Firecrawl [Local] ---
       # FIRECRAWL_URL: "http://firecrawl:3002"

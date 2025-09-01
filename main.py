@@ -30,7 +30,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://devdocs:9292")
 _SEARXNG_URL = os.getenv("SEARXNG_URL", "http://searxng:8080")
-_DISABLE_DOCKER_TOOLS=os.getenv("DISABLE_DOCKER_TOOLS", "true").lower() == "true"
 uptime_launched = datetime.now()
 
 # Import all our modular tools

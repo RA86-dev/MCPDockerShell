@@ -7,7 +7,7 @@ class PromptManager:
     
     def add_prompt(self, mcp_server: FastMCP):
         @mcp_server.prompt()
-        def TheCodingPrompt(what_to_build: str, language: list, other_notes: str):
+        def GenerateCode(what_to_build: str, language: list, other_notes: str):
             """
             A prompt specially made for this MCP server. Provide a bunch of languages you want to use and what to build, and it will build it for you.
             """
@@ -60,3 +60,20 @@ Please develop a complete, production-ready solution that meets the following cr
 Please provide a comprehensive solution that a developer could immediately use and deploy. If you need clarification on any requirements, ask specific questions to ensure the solution meets the exact needs."""
 
             return prompt
+        @mcp_server.prompt()
+        def FixError(ErrorLogs: str, language: str, other_notes: str):
+            prompt = f"""
+You are a Professional Developer, and you have found an error in the code! You need to fix the error. The user has provided some logs:
+{ErrorLogs}
+## language:
+{language}
+## Other Notes:
+{other_notes}
+### Tools
+1. Use the Docker tool to test the new version of the code.
+2. Use SearXNG, Firecrawl (if avaliable), and Documentation to create a cohesive report.
+### Expected Response
+Please provide a Report, on why the error has happened, and information on a fix to the code.
+
+"""
+            return str(prompt)
