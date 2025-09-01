@@ -13,13 +13,15 @@ services:
   searxng:
     image: docker.io/searxng/searxng:latest
     ports:
-      - 8888:8080
+      - 8080:8080
     networks:
       - mcp-network
     volumes:
-      - ./config:/etc/searxng/
-      - ./data:/var/cache/searxng/
+      - searxng-config:/etc/searxng/
+      - searxng-data:/var/cache/searxng/
       - ./static_assets/settings.yml:/usr/local/searxng/searx/settings.yml # enable API features by replacing internal settings.yml with a modified version
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080
     restart: always
   devdocs:
     image: ghcr.io/freecodecamp/devdocs:latest-alpine
@@ -95,7 +97,8 @@ services:
       - mcp-network
 volumes:
   devdocs-data:
-
+  searxng-config:
+  searxng-data:
   redis-data:
 
 networks:

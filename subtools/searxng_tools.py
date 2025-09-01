@@ -253,9 +253,10 @@ class SearXNGTools:
     async def _get_status(self) -> Dict[str, Any]:
         """Check SearXNG instance status"""
         try:
-            # Try to get basic info
+            # Test SearXNG by doing a simple search (more reliable than /stats)
             response = requests.get(
-                f"{self.searxng_url}/stats",
+                f"{self.searxng_url}/search",
+                params={"q": "test", "format": "json"},
                 timeout=10,
                 headers={"Accept": "application/json"},
             )
@@ -272,15 +273,25 @@ class SearXNGTools:
 
             if response.status_code == 200:
                 response_time = (time.time() - start_time) * 1000
-                stats = response.json()
-
-                status_info.update(
-                    {
-                        "available": True,
-                        "response_time_ms": round(response_time, 2),
-                        "stats": stats,
-                    }
-                )
+                try:
+                    search_result = response.json()
+                    status_info.update(
+                        {
+                            "available": True,
+                            "response_time_ms": round(response_time, 2),
+                            "search_test": "passed",
+                            "query_successful": True,
+                        }
+                    )
+                except json.JSONDecodeError:
+                    # Search endpoint returned non-JSON response (likely HTML)
+                    status_info.update(
+                        {
+                            "available": True,
+                            "response_time_ms": round(response_time, 2),
+                            "note": "Search endpoint returned non-JSON response",
+                        }
+                    )
             else:
                 # Try basic health check
                 health_response = requests.get(f"{self.searxng_url}/", timeout=5)
@@ -290,7 +301,7 @@ class SearXNGTools:
                         {
                             "available": True,
                             "response_time_ms": round(response_time, 2),
-                            "note": "Basic health check passed, but stats endpoint unavailable",
+                            "note": "Basic health check passed, but search endpoint unavailable",
                         }
                     )
 

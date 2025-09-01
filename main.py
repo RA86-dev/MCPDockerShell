@@ -44,6 +44,7 @@ try:
     from subtools.firecrawl_tools import FirecrawlTools
     from subtools.searxng_tools import SearXNGTools
     from subtools.module_finder import ModuleFinder
+    from subtools.prompts import PromptManager
 
     HAS_ALL_SUBTOOLS = True
 except ImportError as e:
@@ -297,7 +298,7 @@ class MCPDockerServer:
             else None
         )
         self.module_finder = ModuleFinder() if HAS_ALL_SUBTOOLS else None
-
+        self.PromptManager = PromptManager()
         # Initialize browser tools
         self.browser_tools = (
             BrowserTools(temp_dir=self.temp_dir, logger=self.logger)
@@ -394,7 +395,9 @@ class MCPDockerServer:
             if self.browser_tools and self._get_config("browser_automation", True):
                 self.browser_tools.register_tools(self.mcp)
                 self.logger.info("Registered browser automation tools")
-
+            if self.PromptManager:
+                self.PromptManager.add_prompt(self.mcp)
+                self.logger.info("Registered Prompt Manager")
             # Register monitoring tools
             if self.monitoring_tools and self._get_config("monitoring_tools", True):
                 self.monitoring_tools.register_tools(self.mcp)
