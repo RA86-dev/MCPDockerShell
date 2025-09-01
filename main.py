@@ -14,6 +14,7 @@ import json
 import time
 import psutil
 import logging
+import logging.handlers
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from fastmcp import FastMCP
@@ -27,8 +28,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 # Environment variables
-_DEVDOCS_URL = os.getenv("DEVDOCS_URL", "https://devdocs.io/")
-_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:9292")
+_DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://devdocs:9292")
+_SEARXNG_URL = os.getenv("SEARXNG_URL", "http://searxng:8080")
 _DISABLE_DOCKER_TOOLS=os.getenv("DISABLE_DOCKER_TOOLS", "true").lower() == "true"
 uptime_launched = datetime.now()
 
@@ -104,7 +105,7 @@ class ServiceConfig:
     documentation_tools: bool = True
     firecrawl_tools: bool = True
     searxng_tools: bool = True
-    websocket_enabled: bool = (False,)
+    websocket_enabled: bool = False
     module_Finder: bool = True
     security_level: SecurityLevel = SecurityLevel.MEDIUM
     auto_cleanup_enabled: bool = True
