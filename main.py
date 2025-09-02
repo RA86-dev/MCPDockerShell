@@ -9,6 +9,7 @@ import tempfile
 import os
 import argparse
 import secrets
+
 import sys
 import json
 import time
@@ -25,7 +26,7 @@ from cachetools import TTLCache
 from collections import defaultdict
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 # Environment variables
 _DEVDOCS_URL = os.getenv("DEVDOCS_URL", "http://devdocs:9292")
@@ -108,6 +109,7 @@ class ServiceConfig:
     searxng_tools: bool = True
     websocket_enabled: bool = False
     module_Finder: bool = True
+    dashboard_enabled: bool = False
     security_level: SecurityLevel = SecurityLevel.MEDIUM
     auto_cleanup_enabled: bool = True
     health_checks_enabled: bool = True
@@ -434,6 +436,11 @@ class MCPDockerServer:
 
             # Register basic utility tools
             self._register_utility_tools()
+            
+            # Register web interface routes if enabled
+            if self._get_config("dashboard_enabled", False):
+                self._register_web_interface()
+                self.logger.info("Registered web dashboard interface")
 
         except Exception as e:
             self.logger.error(f"Failed to register tools: {e}")
@@ -554,6 +561,594 @@ class MCPDockerServer:
             except Exception as e:
                 return f"Error performing health check: {str(e)}"
 
+    def _register_web_interface(self):
+        """Register web interface routes for status dashboard"""
+        
+        @self.mcp.app.get("/dashboard", response_class=HTMLResponse)
+        async def dashboard():
+            """System Status Dashboard"""
+            html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Docker Server - Status Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+            font-size: 1.3em;
+        }
+        
+        .status-item {
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .status-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .status-value {
+            font-size: 1.1em;
+            color: #212529;
+            margin-left: 10px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-low { background: #28a745; }
+        .progress-medium { background: #ffc107; }
+        .progress-high { background: #dc3545; }
+        
+        .gpu-grid {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .gpu-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 15px 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+            font-size: 1em;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a6fd8;
+            transform: scale(1.05);
+        }
+        
+        .loading {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .success {
+            color: #155724;
+            background: #d4edda;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #c3e6cb;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖥️ MCP Docker Server Dashboard</h1>
+            <p>Real-time monitoring of your MCP Docker Server and system resources</p>
+        </div>
+        
+        <div class="grid">
+            <!-- MCP Server Status Card -->
+            <div class="card">
+                <h2>🚀 MCP Server Status</h2>
+                <div id="mcp-status" class="loading">Loading MCP server status...</div>
+            </div>
+            
+            <!-- System Status Card -->
+            <div class="card">
+                <h2>💻 System Resources</h2>
+                <div id="system-status" class="loading">Loading system status...</div>
+            </div>
+            
+            <!-- NVIDIA GPU Card -->
+            <div class="card">
+                <h2>🎮 NVIDIA GPU Status</h2>
+                <div id="gpu-status" class="loading">Loading GPU status...</div>
+            </div>
+            
+            <!-- Docker Containers Card -->
+            <div class="card">
+                <h2>🐳 Docker Status</h2>
+                <div id="docker-status" class="loading">Loading Docker status...</div>
+            </div>
+            
+            <!-- Health Check Card -->
+            <div class="card">
+                <h2>🏥 Health Check</h2>
+                <div id="health-status" class="loading">Loading health status...</div>
+            </div>
+        </div>
+    </div>
+    
+    <button class="refresh-btn" onclick="refreshAll()">🔄 Refresh</button>
+    
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function getProgressClass(percentage) {
+            if (percentage < 60) return 'progress-low';
+            if (percentage < 85) return 'progress-medium';
+            return 'progress-high';
+        }
+        
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            return `${days}d ${hours}h ${minutes}m`;
+        }
+        
+        async function loadMCPStatus() {
+            try {
+                const response = await fetch('/api/mcp-info');
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('mcp-status').innerHTML = 
+                        '<div class="error">Error: ' + data.error + '</div>';
+                    return;
+                }
+                
+                const info = JSON.parse(data);
+                const html = `
+                    <div class="success">✅ MCP Server Running</div>
+                    <div class="status-item">
+                        <span class="status-label">Server:</span>
+                        <span class="status-value">${info.server_name}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Version:</span>
+                        <span class="status-value">${info.version}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Uptime:</span>
+                        <span class="status-value">${formatUptime(info.uptime_seconds)}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Active Containers:</span>
+                        <span class="status-value">${info.docker.active_containers}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Docker Version:</span>
+                        <span class="status-value">${info.docker.version}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">GPU Support:</span>
+                        <span class="status-value">${info.capabilities.gpu_support ? '✅ Available' : '❌ Not Available'}</span>
+                    </div>
+                `;
+                
+                document.getElementById('mcp-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('mcp-status').innerHTML = 
+                    '<div class="error">Failed to load MCP status: ' + error.message + '</div>';
+            }
+        }
+        
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch('/api/system-status');
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('system-status').innerHTML = 
+                        '<div class="error">Error: ' + data.error + '</div>';
+                    return;
+                }
+                
+                const html = `
+                    <div class="status-item">
+                        <span class="status-label">CPU Usage:</span>
+                        <span class="status-value">${data.cpu_percent}%</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${getProgressClass(data.cpu_percent)}" 
+                                 style="width: ${data.cpu_percent}%"></div>
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Memory:</span>
+                        <span class="status-value">${data.memory_percent}%</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${getProgressClass(data.memory_percent)}" 
+                                 style="width: ${data.memory_percent}%"></div>
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Disk:</span>
+                        <span class="status-value">${data.disk_percent}%</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill ${getProgressClass(data.disk_percent)}" 
+                                 style="width: ${data.disk_percent}%"></div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('system-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('system-status').innerHTML = 
+                    '<div class="error">Failed to load system status: ' + error.message + '</div>';
+            }
+        }
+        
+        async function loadGPUStatus() {
+            try {
+                const response = await fetch('/api/gpu-status');
+                const data = await response.json();
+                
+                let html = '';
+                
+                if (data.status === 'available') {
+                    html = '<div class="success">✅ NVIDIA GPU(s) detected</div>';
+                    html += '<div class="gpu-grid">';
+                    
+                    data.gpus.forEach((gpu, index) => {
+                        html += `
+                            <div class="gpu-card">
+                                <h3>GPU ${index + 1}: ${gpu.name}</h3>
+                                <div class="status-item">
+                                    <span class="status-label">Driver Version:</span>
+                                    <span class="status-value">${gpu.driver_version}</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Temperature:</span>
+                                    <span class="status-value">${gpu.temperature}°C</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Utilization:</span>
+                                    <span class="status-value">${gpu.utilization}%</span>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill ${getProgressClass(gpu.utilization)}" 
+                                             style="width: ${gpu.utilization}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                } else if (data.status === 'not_available') {
+                    html = '<div class="error">❌ NVIDIA drivers not installed</div>';
+                } else {
+                    html = '<div class="error">⚠️ ' + data.message + '</div>';
+                }
+                
+                document.getElementById('gpu-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('gpu-status').innerHTML = 
+                    '<div class="error">Failed to load GPU status: ' + error.message + '</div>';
+            }
+        }
+        
+        async function loadDockerStatus() {
+            try {
+                const response = await fetch('/api/docker-containers');
+                const data = await response.json();
+                
+                let html = '';
+                if (data.error) {
+                    html = '<div class="error">⚠️ ' + data.error + '</div>';
+                } else {
+                    html = `
+                        <div class="success">✅ Docker is running</div>
+                        <div class="status-item">
+                            <span class="status-label">Total Containers:</span>
+                            <span class="status-value">${data.total}</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Running:</span>
+                            <span class="status-value">${data.running}</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Stopped:</span>
+                            <span class="status-value">${data.stopped}</span>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('docker-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('docker-status').innerHTML = 
+                    '<div class="error">Failed to load Docker status: ' + error.message + '</div>';
+            }
+        }
+        
+        async function loadHealthStatus() {
+            try {
+                const response = await fetch('/api/health-check');
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('health-status').innerHTML = 
+                        '<div class="error">Error: ' + data.error + '</div>';
+                    return;
+                }
+                
+                const health = JSON.parse(data);
+                let html = `<div class="success">✅ System Health: ${health.overall_status}</div>`;
+                
+                Object.entries(health.services).forEach(([service, status]) => {
+                    const statusClass = status.status === 'healthy' ? 'success' : 'error';
+                    html += `
+                        <div class="status-item">
+                            <span class="status-label">${service}:</span>
+                            <span class="status-value ${statusClass}">${status.status}</span>
+                        </div>
+                    `;
+                });
+                
+                document.getElementById('health-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('health-status').innerHTML = 
+                    '<div class="error">Failed to load health status: ' + error.message + '</div>';
+            }
+        }
+        
+        function refreshAll() {
+            document.getElementById('mcp-status').innerHTML = '<div class="loading">Refreshing...</div>';
+            document.getElementById('system-status').innerHTML = '<div class="loading">Refreshing...</div>';
+            document.getElementById('gpu-status').innerHTML = '<div class="loading">Refreshing...</div>';
+            document.getElementById('docker-status').innerHTML = '<div class="loading">Refreshing...</div>';
+            document.getElementById('health-status').innerHTML = '<div class="loading">Refreshing...</div>';
+            
+            loadMCPStatus();
+            loadSystemStatus();
+            loadGPUStatus();
+            loadDockerStatus();
+            loadHealthStatus();
+        }
+        
+        // Load data when page loads
+        window.onload = function() {
+            loadMCPStatus();
+            loadSystemStatus();
+            loadGPUStatus();
+            loadDockerStatus();
+            loadHealthStatus();
+        };
+        
+        // Auto refresh every 30 seconds
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>
+            """
+            return HTMLResponse(content=html_content)
+
+        @self.mcp.app.get("/api/mcp-info", response_class=JSONResponse)
+        async def mcp_info_api():
+            """API endpoint for MCP server information"""
+            try:
+                info = {
+                    "server_name": "MCPDocker-Enhanced-Modular",
+                    "version": f"{sv.SERVER_VERSION} - {sv.SERVER_NICKNAME}",
+                    "uptime_seconds": time.time() - self.start_time,
+                    "capabilities": {
+                        "docker_management": bool(self.docker_tools),
+                        "browser_automation": bool(self.browser_tools),
+                        "monitoring": bool(self.monitoring_tools),
+                        "development_tools": bool(self.development_tools),
+                        "workflow_automation": bool(self.workflow_tools),
+                        "documentation": bool(self.documentation_tools),
+                        "web_scraping": bool(self.firecrawl_tools),
+                        "web_search": bool(self.searxng_tools),
+                        "gpu_support": self.gpu_available,
+                    },
+                    "docker": {
+                        "connected": True,
+                        "version": self.docker_client.version().get("Version", "Unknown"),
+                        "active_containers": len(self.active_containers),
+                    },
+                }
+                return json.dumps(info, indent=2)
+            except Exception as e:
+                return {"error": str(e)}
+
+        @self.mcp.app.get("/api/system-status", response_class=JSONResponse)
+        async def system_status_api():
+            """API endpoint for system resource status"""
+            try:
+                return {
+                    "cpu_percent": psutil.cpu_percent(interval=1),
+                    "memory_percent": psutil.virtual_memory().percent,
+                    "disk_percent": psutil.disk_usage("/").percent,
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                return {"error": str(e)}
+
+        @self.mcp.app.get("/api/gpu-status", response_class=JSONResponse) 
+        async def gpu_status_api():
+            """API endpoint for GPU status"""
+            try:
+                import subprocess
+                result = subprocess.run(['nvidia-smi', '--query-gpu=name,driver_version,temperature.gpu,utilization.gpu,memory.used,memory.total,power.draw', '--format=csv,noheader,nounits'], 
+                                      capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    gpus = []
+                    for line in result.stdout.strip().split('\n'):
+                        if line:
+                            parts = [p.strip() for p in line.split(',')]
+                            gpus.append({
+                                'name': parts[0],
+                                'driver_version': parts[1],
+                                'temperature': parts[2],
+                                'utilization': parts[3],
+                                'memory_used': parts[4],
+                                'memory_total': parts[5],
+                                'power_draw': parts[6]
+                            })
+                    return {'status': 'available', 'gpus': gpus}
+                else:
+                    return {'status': 'error', 'message': 'nvidia-smi failed'}
+            except FileNotFoundError:
+                return {'status': 'not_available', 'message': 'NVIDIA drivers not installed'}
+            except subprocess.TimeoutExpired:
+                return {'status': 'timeout', 'message': 'nvidia-smi timed out'}
+            except Exception as e:
+                return {'status': 'error', 'message': str(e)}
+
+        @self.mcp.app.get("/api/docker-containers", response_class=JSONResponse)
+        async def docker_containers_api():
+            """API endpoint for Docker container status"""
+            try:
+                containers = self.docker_client.containers.list(all=True)
+                running = len([c for c in containers if c.status == 'running'])
+                stopped = len(containers) - running
+                
+                return {
+                    "total": len(containers),
+                    "running": running,
+                    "stopped": stopped
+                }
+            except Exception as e:
+                return {"error": str(e)}
+
+        @self.mcp.app.get("/api/health-check", response_class=JSONResponse)
+        async def health_check_api():
+            """API endpoint for health check"""
+            try:
+                health = {
+                    "overall_status": "healthy",
+                    "timestamp": datetime.now().isoformat(),
+                    "services": {
+                        "docker": {
+                            "status": "healthy",
+                            "details": "Connected and responsive",
+                        },
+                        "mcp_server": {
+                            "status": "healthy", 
+                            "details": "All tools registered",
+                        },
+                    },
+                    "system_resources": {
+                        "cpu_percent": psutil.cpu_percent(),
+                        "memory_percent": psutil.virtual_memory().percent,
+                        "disk_percent": psutil.disk_usage("/").percent,
+                    },
+                }
+                return json.dumps(health, indent=2)
+            except Exception as e:
+                return {"error": str(e)}
+
     def setup_enhanced_logging(self):
         """Setup enhanced logging with rotation"""
         log_file = self.logs_dir / "mcpdocker.log"
@@ -655,7 +1250,7 @@ class MCPDockerServer:
         return self.mcp.run(transport=transport_method)
 
 
-def main():
+def serve_server():
     """Main entry point"""
     parser = argparse.ArgumentParser(
         description="MCP Docker Server - Enhanced Modular Edition"
@@ -671,6 +1266,9 @@ def main():
     )
     parser.add_argument(
         "--port", type=int, default=8000, help="Port for WebSocket/SSE transport"
+    )
+    parser.add_argument(
+        "--enable-dashboard", action="store_true", help="Enable web dashboard interface"
     )
     parser.add_argument("--config", help="Path to configuration file")
     parser.add_argument(
@@ -721,6 +1319,8 @@ def main():
         service_config.firecrawl_tools = False
     if args.disable_searxng:
         service_config.searxng_tools = False
+    if args.enable_dashboard:
+        service_config.dashboard_enabled = True
 
     try:
         # Initialize and run server
@@ -748,4 +1348,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(serve_server())
