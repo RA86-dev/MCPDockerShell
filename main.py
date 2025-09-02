@@ -347,28 +347,30 @@ class MCPDockerServer:
         )
 
         # Initialize web scraping and search tools
-        if os.getenv("ENABLE_FIRECRAWL", "false") == "true":
-            # self.firecrawl_tools = FirecrawlTools(logger=self.logger) if HAS_ALL_SUBTOOLS else None
-            if os.getenv("ENABLE_LOCAL_FIRECRAWL") == "true" and os.getenv("LOCAL_URL"):
-                self.firecrawl_tools = (
-                    FirecrawlTools(
-                        logger=self.logger,
-                        local_url=os.getenv("LOCAL_URL"),
-                        api_key=None,
-                    )
-                    if HAS_ALL_SUBTOOLS
-                    else None
-                )
+        if os.getenv("ENABLE_FIRECRAWL", "true").lower() == "true":
+            firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
+            local_url = os.getenv("LOCAL_URL")
+
+            if os.getenv("ENABLE_LOCAL_FIRECRAWL", "true").lower() == "true" and local_url:
+                # Use local Firecrawl instance
+                self.firecrawl_tools = FirecrawlTools(
+                    logger=self.logger,
+                    local_url=local_url,
+                    api_key=None
+                ) if HAS_ALL_SUBTOOLS else None
+            elif firecrawl_api_key:
+                # Use cloud-based Firecrawl with API key
+                self.firecrawl_tools = FirecrawlTools(
+                    logger=self.logger,
+                    api_key=firecrawl_api_key
+                ) if HAS_ALL_SUBTOOLS else None
             else:
-                self.firecrawl_tools = (
-                    FirecrawlTools(
-                        logger=self.logger,
-                        local_url="http://localhost:3002",
-                        api_key=os.getenv("FIRECRAWL_API_KEY"),
-                    )
-                    if HAS_ALL_SUBTOOLS
-                    else None
-                )
+                # Default to local Firecrawl if no API key is provided
+                self.firecrawl_tools = FirecrawlTools(
+                    logger=self.logger,
+                    local_url="http://localhost:3002",
+                    api_key=None
+                ) if HAS_ALL_SUBTOOLS else None
         else:
             self.firecrawl_tools = None
 

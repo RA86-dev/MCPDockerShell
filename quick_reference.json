@@ -1,0 +1,68 @@
+{
+  "python": {
+    "syntax": {
+      "variables": "name = value",
+      "functions": "def function_name(param):\\n    return value",
+      "classes": "class ClassName:\\n    def __init__(self):\\n        pass",
+      "loops": "for item in iterable:\\n    pass\\n\\nwhile condition:\\n    pass",
+      "conditions": "if condition:\\n    pass\\nelif other_condition:\\n    pass\\nelse:\\n    pass"
+    },
+    "data_types": [
+      "int",
+      "float",
+      "str",
+      "list",
+      "dict",
+      "tuple",
+      "set",
+      "bool"
+    ],
+    "common_imports": [
+      "import os",
+      "import sys",
+      "import json",
+      "import requests",
+      "from pathlib import Path"
+    ],
+    "useful_functions": [
+      "len()",
+      "range()",
+      "enumerate()",
+      "zip()",
+      "map()",
+      "filter()"
+    ]
+  },
+  "javascript": {
+    "syntax": {
+      "variables": "const name = value; let mutable = value; var old = value;",
+      "functions": "function name(param) { return value; }\\n// or\\nconst name = (param) => value;",
+      "objects": "const obj = { key: value, method() { return this.key; } };",
+      "loops": "for (let i = 0; i < arr.length; i++) {}\\nfor (const item of arr) {}\\nfor (const key in obj) {}",
+      "conditions": "if (condition) {\\n} else if (other) {\\n} else {\\n}"
+    },
+    "data_types": [
+      "number",
+      "string",
+      "boolean",
+      "object",
+      "array",
+      "null",
+      "undefined"
+    ],
+    "common_methods": [
+      "array.map()",
+      "array.filter()",
+      "array.reduce()",
+      "string.split()",
+      "JSON.parse()"
+    ],
+    "es6_features": [
+      "const/let",
+      "arrow functions",
+      "destructuring",
+      "template literals",
+      "modules"
+    ]
+  }
+}
