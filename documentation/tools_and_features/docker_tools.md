@@ -4,286 +4,147 @@ The Docker Tools module provides comprehensive container management capabilities
 
 ## Container Management
 
-### Container Lifecycle
-
-#### `create_container`
+### `create_container`
 Creates and starts a new Docker container that runs indefinitely.
 
 **Parameters:**
-- `image` (required): Docker image name (e.g., "python:3.11-slim")
-- `name` (optional): Custom name for the container
-- `command` (optional): Custom command to run in the container
-- `environment` (optional): Environment variables as key-value pairs
-- `ports` (optional): Port mappings from container to host
-- `use_gpu` (optional): Enable GPU access (requires NVIDIA Container Toolkit)
+- `image` (required): Docker image name (e.g., "python:3.11-slim"). Must be in the allowed list.
+- `name` (optional): Custom name for the container.
+- `command` (optional): Custom command to run in the container.
+- `environment` (optional): Environment variables as a dictionary.
+- `ports` (optional): Port mappings from container to host as a dictionary (e.g., `{"8000": "8080"}`).
+- `use_gpu` (optional): Enable GPU access (requires NVIDIA Container Toolkit).
+
+**Returns:** A string confirming the container creation with its name and ID.
 
 **Example:**
 ```python
-container = await create_container(
+await create_container(
     image="python:3.11-slim",
-    name="python-dev",
-    environment={"PYTHONPATH": "/workspace"},
-    ports={"8000": 8080},
-    use_gpu=False
+    name="my-python-dev",
+    environment={"MY_VAR": "my_value"},
+    ports={"8000": 8080}
 )
 ```
 
-#### `list_containers`
-Lists all active Docker containers managed by the MCP server.
+### `list_containers`
+Lists all active Docker containers.
 
-**Returns:** List of container information including ID, name, status, and image.
+**Returns:** A JSON string with a list of container information, including ID, name, status, and image.
 
-#### `start_container`, `stop_container`, `restart_container`
-Control container lifecycle states.
+### `inspect_container`
+Inspects a container using the `docker inspect` command.
 
 **Parameters:**
-- `container_id` (required): ID of the container to control
+- `container` (required): The name or ID of the container to inspect.
 
-#### `delete_container`
+**Returns:** A JSON string with the container's details.
+
+### `start_container`, `stop_container`, `restart_container`
+Control the lifecycle of a container.
+
+**Parameters:**
+- `container_id` (required): The name or ID of the container to control.
+
+**Returns:** A string confirming the action.
+
+### `delete_container`
 Stops and removes a container completely.
 
 **Parameters:**
-- `container_id` (required): ID of the container to delete
+- `container_id` (required): The name or ID of the container to delete.
 
-### Command Execution
+**Returns:** A string confirming the deletion.
 
-#### `execute_command`
+## Command Execution
+
+### `execute_command`
 Execute a command inside a running container.
 
 **Parameters:**
-- `container_id` (required): Target container ID
-- `command` (required): Command to execute
+- `container_id` (required): The name or ID of the target container.
+- `command` (required): The command to execute.
+
+**Returns:** A string containing the command's exit code and output.
 
 **Example:**
 ```python
 result = await execute_command(
-    container_id="abc123",
+    container_id="my-python-dev",
     command="python -c 'print(\"Hello from container!\")'"
 )
 ```
 
-#### `stream_command_execution`
-Execute a command and stream the output in real-time.
+## Workspace Management
+
+The server provides a shared workspace located at `/tmp/workspace` on the host, which is mounted as `/workspace` inside the containers. You can use `upload_file` and `list_workspace_files` to manage files in this workspace.
+
+### `upload_file`
+Upload a file to the shared workspace.
 
 **Parameters:**
-- `container_id` (required): Target container ID
-- `command` (required): Command to execute
+- `filename` (required): The name of the file to create in the workspace.
+- `content` (required): The content of the file.
 
-## File Operations
+**Returns:** A string confirming the file upload.
 
-### Basic File Operations
+### `list_workspace_files`
+List files in the shared workspace.
 
-#### `create_file_in_container`
-Create a file with specified content inside a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `file_path` (required): Path where to create the file
-- `content` (required): File content
-
-#### `read_file_in_container`
-Read the contents of a file inside a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `file_path` (required): Path to the file to read
-
-#### `write_file_in_container`
-Write content to a file inside a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `file_path` (required): Target file path
-- `content` (required): Content to write
-- `append` (optional): Whether to append to existing file (default: false)
-
-#### `delete_file_in_container`
-Delete a file inside a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `file_path` (required): Path to the file to delete
-
-### Directory Operations
-
-#### `list_files_in_container`
-List files and directories in a container directory.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `directory_path` (optional): Directory path (default: "/workspace")
-
-#### `create_directory_in_container`
-Create a directory inside a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `directory_path` (required): Path of the directory to create
-
-### File Transfer Operations
-
-#### `copy_file_to_container`
-Copy a file from local filesystem or workspace to a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `local_path` (required): Source file path on local system
-- `container_path` (required): Destination path in container
-
-#### `copy_file_from_container`
-Copy a file from container to local workspace.
-
-**Parameters:**
-- `container_id` (required): Source container ID
-- `container_path` (required): Source file path in container
-- `local_path` (optional): Destination path (if not specified, uses workspace)
-
-#### `copy_file_in_container`, `move_file_in_container`
-Copy or move files within a container.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `source_path` (required): Source file/directory path
-- `dest_path` (required): Destination path
+**Returns:** A JSON string with a list of files and their details.
 
 ## Monitoring and Logging
 
-#### `get_container_logs`
+### `get_container_logs`
 Retrieve logs from a container.
 
 **Parameters:**
-- `container_id` (required): Target container ID
-- `tail` (optional): Number of lines to retrieve (default: 100)
+- `container_id` (required): The name or ID of the target container.
+- `tail` (optional): The number of lines to retrieve from the end of the logs (default: 100).
 
-#### `stream_container_logs`
-Stream container logs in real-time.
+**Returns:** The container logs as a string.
 
-**Parameters:**
-- `container_id` (required): Target container ID
-- `follow` (optional): Continue streaming new logs (default: true)
-- `tail` (optional): Number of historical lines to include (default: 100)
+### `get_gpu_status`
+Get the status of available NVIDIA and AMD GPUs on the host.
 
-## Networking and Port Management
+**Returns:** A JSON string with information about the detected GPUs.
 
-#### `start_port_stream`
-Start streaming data from a container port to a host port.
+## Allowed Images
 
-**Parameters:**
-- `container_id` (required): Target container ID
-- `container_port` (required): Container port to stream from
-- `host_port` (optional): Host port to stream to (auto-assigned if not specified)
+### `list_allowed_images`
+List the Docker images that are allowed to be used for creating containers.
 
-#### `stop_port_stream`
-Stop streaming data from a container port.
-
-**Parameters:**
-- `container_id` (required): Target container ID
-- `container_port` (required): Container port to stop streaming
-
-#### `list_active_streams`
-List all active port streams.
-
-## Security Features
-
-### Docker Scout Integration
-
-#### `scout_scan_vulnerabilities`
-Scan a Docker image for security vulnerabilities using Docker Scout.
-
-**Parameters:**
-- `image` (required): Docker image name to scan
-
-#### `scout_get_recommendations`
-Get Docker Scout security recommendations for an image.
-
-**Parameters:**
-- `image` (required): Docker image name
-
-#### `scout_quickview`
-Get a quick security overview of a Docker image.
-
-**Parameters:**
-- `image` (required): Docker image name
-
-#### `scout_compare_images`
-Compare two Docker images for security differences.
-
-**Parameters:**
-- `base_image` (required): Base image for comparison
-- `target_image` (required): Target image for comparison
-
-#### `scout_policy_evaluation`
-Evaluate a Docker image against security policies.
-
-**Parameters:**
-- `image` (required): Docker image name
-- `policy` (optional): Security policy name (default: "default")
-
-## Workspace Management
-
-#### `upload_file`
-Upload a file to the shared workspace accessible by containers.
-
-**Parameters:**
-- `filename` (required): Name of the file
-- `content` (required): File content
-
-#### `list_workspace_files`
-List files in the shared workspace.
-
-## GPU Support
-
-When `use_gpu=True` is specified during container creation:
-
-- Enables NVIDIA GPU access within containers
-- Requires NVIDIA Container Toolkit to be installed on the host
-- Useful for AI/ML workloads requiring GPU acceleration
-- Check GPU availability with `get_gpu_status()`
-
-## Supported Images
-
-Use `list_allowed_images()` to see which Docker images are available for container creation. The system supports a wide range of programming language environments including:
-
-- Python (various versions)
-- Node.js
-- Java
-- Go
-- Rust
-- And many more
-
-## Best Practices
-
-1. **Resource Management**: Always clean up containers when done using `delete_container()`
-2. **Security**: Use minimal base images and scan with Docker Scout
-3. **Networking**: Use port streaming for web applications and services
-4. **File Operations**: Use the workspace for sharing files between host and containers
-5. **Monitoring**: Monitor container logs and resource usage regularly
+**Returns:** A sorted list of allowed image names.
 
 ## Example Workflow
 
 ```python
-# Create a Python development container
-container = await create_container(
-    image="python:3.11-slim",
-    name="python-dev"
+# 1. See what images are available
+await list_allowed_images()
+
+# 2. Create a Python development container
+await create_container(
+    image="python:3.11",
+    name="my-app-dev"
 )
 
-# Create a Python script
-await create_file_in_container(
-    container_id=container.id,
-    file_path="/workspace/hello.py",
-    content="print('Hello from Docker!')"
+# 3. Upload a Python script to the workspace
+await upload_file(
+    filename="app.py",
+    content="print('Hello from my app!')"
 )
 
-# Execute the script
+# 4. Execute the script in the container
 result = await execute_command(
-    container_id=container.id,
-    command="python /workspace/hello.py"
+    container_id="my-app-dev",
+    command="python /workspace/app.py"
 )
+print(result)
 
-# Check logs
-logs = await get_container_logs(container_id=container.id)
+# 5. Check the container's logs
+logs = await get_container_logs(container_id="my-app-dev")
+print(logs)
 
-# Clean up
-await delete_container(container_id=container.id)
+# 6. Clean up the container
+await delete_container(container_id="my-app-dev")
 ```

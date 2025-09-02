@@ -1,0 +1,52 @@
+{
+  "supported_languages": {
+    "python": {
+      "folder": "python_docs",
+      "version": "3.11",
+      "base_url": "https://docs.python.org/3/",
+      "devdocs_slug": "python~3.11"
+    },
+    "javascript": {
+      "folder": "javascript_docs",
+      "version": "ES2023",
+      "base_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+      "devdocs_slug": "javascript"
+    },
+    "java": {
+      "folder": "java_docs",
+      "version": "17",
+      "base_url": "https://docs.oracle.com/en/java/javase/17/",
+      "devdocs_slug": "openjdk~17"
+    },
+    "csharp": {
+      "folder": "csharp_docs",
+      "version": ".NET 7",
+      "base_url": "https://docs.microsoft.com/en-us/dotnet/csharp/",
+      "devdocs_slug": "dotnet~7"
+    },
+    "golang": {
+      "folder": "go_docs",
+      "version": "1.21",
+      "base_url": "https://golang.org/doc/",
+      "devdocs_slug": "go"
+    },
+    "rust": {
+      "folder": "rust_docs",
+      "version": "1.70",
+      "base_url": "https://doc.rust-lang.org/",
+      "devdocs_slug": "rust"
+    },
+    "cpp": {
+      "folder": "cpp_docs",
+      "version": "C++20",
+      "base_url": "https://en.cppreference.com/w/cpp",
+      "devdocs_slug": "cpp"
+    },
+    "php": {
+      "folder": "php_docs",
+      "version": "8.2",
+      "base_url": "https://www.php.net/manual/en/",
+      "devdocs_slug": "php~8.2"
+    }
+  }
+}

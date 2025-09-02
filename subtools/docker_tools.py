@@ -156,7 +156,7 @@ class DockerTools:
         ) -> str:
             """Create and start a new Docker container that runs indefinitely"""
             if image not in self.allowed_images:
-                return f"Error: Image '{image}' is not in the allowed list. Use list_allowed_images() to see available images."
+                return json.dumps({"error": f"Image '{image}' is not in the allowed list."})
 
             try:
                 container_config = {
@@ -177,10 +177,6 @@ class DockerTools:
                         container_config["command"] = "/bin/bash"
                     elif "alpine" in image.lower():
                         container_config["command"] = "/bin/sh"
-                    elif "python" in image.lower():
-                        container_config["command"] = "/bin/bash"
-                    elif "node" in image.lower():
-                        container_config["command"] = "/bin/sh"
                     else:
                         container_config["command"] = "/bin/sh"
 
@@ -190,26 +186,17 @@ class DockerTools:
                 if ports:
                     container_config["ports"] = ports
 
-                # GPU support
                 if use_gpu:
-                    try:
-                        container_config["runtime"] = "nvidia"
-                        if not environment:
-                            container_config["environment"] = {}
-                        container_config["environment"][
-                            "NVIDIA_VISIBLE_DEVICES"
-                        ] = "all"
-                    except Exception as gpu_error:
-                        if self.logger:
-                            self.logger.warning(
-                                f"GPU configuration failed: {gpu_error}"
-                            )
+                    container_config["device_requests"] = [
+                        docker.types.DeviceRequest(count=-1, capabilities=[['gpu']])
+                    ]
 
                 # Create workspace volume
+                workspace_path = Path(self.temp_dir) / "workspace"
+                workspace_path.mkdir(parents=True, exist_ok=True)
                 container_config["volumes"] = {
-                    "/tmp/workspace": {"bind": "/workspace", "mode": "rw"}
+                    str(workspace_path): {"bind": "/workspace", "mode": "rw"}
                 }
-                os.makedirs("/tmp/workspace", exist_ok=True)
 
                 container = self.docker_client.containers.run(**container_config)
 
@@ -220,187 +207,167 @@ class DockerTools:
                     "image": image,
                 }
 
-                return f"Container created successfully: {container.name} ({container.id[:12]})"
+                return json.dumps({
+                    "success": True,
+                    "message": f"Container created successfully: {container.name} ({container.id[:12]})",
+                    "container_id": container.id,
+                    "container_name": container.name
+                })
 
             except Exception as e:
-                return f"Error creating container: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error creating container: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def execute_command(container_id: str, command: str) -> str:
             """Execute a command in a running container"""
             container = self._find_container(container_id)
             if not container:
-                return f"Container {container_id} not found"
+                return json.dumps({"error": f"Container '{container_id}' not found."})
 
             try:
                 result = container.exec_run(command, tty=True, stream=False)
                 output = result.output.decode("utf-8", errors="replace")
-
-                return f"Exit code: {result.exit_code}\nOutput:\n{output}"
-
+                return json.dumps({
+                    "exit_code": result.exit_code,
+                    "output": output
+                })
             except Exception as e:
-                return f"Error executing command: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error executing command in {container_id}: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def list_containers() -> str:
             """List all active containers"""
             try:
                 containers_info = []
-
-                # Refresh active containers list
-                current_containers = self.docker_client.containers.list(all=True)
-
-                for container in current_containers:
-                    try:
-                        container_info = {
-                            "id": container.id[:12],
-                            "name": container.name,
-                            "image": (
-                                container.image.tags[0]
-                                if container.image.tags
-                                else container.image.id[:12]
-                            ),
-                            "status": container.status,
-                            "created": container.attrs.get("Created", "Unknown"),
-                            "ports": (
-                                container.ports if hasattr(container, "ports") else {}
-                            ),
-                        }
-                        containers_info.append(container_info)
-                    except Exception as e:
-                        if self.logger:
-                            self.logger.warning(f"Error getting container info: {e}")
-                        continue
-
-                if not containers_info:
-                    return "No containers found"
-
-                return json.dumps(containers_info, indent=2, default=str)
-
+                for container in self.docker_client.containers.list(all=True):
+                    containers_info.append({
+                        "id": container.id[:12],
+                        "name": container.name,
+                        "image": container.image.tags[0] if container.image.tags else container.image.id,
+                        "status": container.status,
+                    })
+                return json.dumps(containers_info, indent=2)
             except Exception as e:
-                return f"Error listing containers: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error listing containers: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def upload_file(filename: str, content: str) -> str:
             """Upload a file to the shared workspace"""
             try:
-                workspace_path = Path("/tmp/workspace")
-                workspace_path.mkdir(exist_ok=True)
-
+                workspace_path = Path(self.temp_dir) / "workspace"
+                workspace_path.mkdir(parents=True, exist_ok=True)
                 file_path = workspace_path / filename
 
-                # Ensure we don't write outside workspace
-                if not str(file_path.resolve()).startswith(
-                    str(workspace_path.resolve())
-                ):
-                    return f"Error: Invalid file path. Must be within workspace."
+                if not file_path.resolve().is_relative_to(workspace_path.resolve()):
+                     return json.dumps({"error": "Invalid file path. Must be within workspace."})
 
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
-
-                return f"File uploaded successfully: {filename} ({len(content)} characters)"
-
+                return json.dumps({"success": True, "message": f"File '{filename}' uploaded successfully."})
             except Exception as e:
-                return f"Error uploading file: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error uploading file: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def list_workspace_files() -> str:
             """List files in the shared workspace"""
             try:
-                workspace_path = Path("/tmp/workspace")
+                workspace_path = Path(self.temp_dir) / "workspace"
                 if not workspace_path.exists():
-                    return "Workspace directory does not exist"
+                    return json.dumps([])
 
-                files_info = []
-                for item in workspace_path.rglob("*"):
-                    if item.is_file():
-                        try:
-                            stat = item.stat()
-                            files_info.append(
-                                {
-                                    "name": str(item.relative_to(workspace_path)),
-                                    "size": stat.st_size,
-                                    "modified": time.ctime(stat.st_mtime),
-                                }
-                            )
-                        except Exception:
-                            continue
-
+                files_info = [
+                    {
+                        "name": str(item.relative_to(workspace_path)),
+                        "size": item.stat().st_size,
+                        "modified": time.ctime(item.stat().st_mtime),
+                    }
+                    for item in workspace_path.rglob("*") if item.is_file()
+                ]
                 return json.dumps(files_info, indent=2)
-
             except Exception as e:
-                return f"Error listing workspace files: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error listing workspace files: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def stop_container(container_id: str) -> str:
-            """Stop a running container (without removing it)"""
+            """Stop a running container"""
             container = self._find_container(container_id)
             if not container:
-                return f"Container {container_id} not found"
-
+                return json.dumps({"error": f"Container '{container_id}' not found."})
             try:
                 container.stop()
-                return f"Container {container_id} stopped successfully"
+                return json.dumps({"success": True, "message": f"Container '{container_id}' stopped."})
             except Exception as e:
-                return f"Error stopping container: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error stopping container {container_id}: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def start_container(container_id: str) -> str:
             """Start a stopped container"""
             container = self._find_container(container_id)
             if not container:
-                return f"Container {container_id} not found"
-
+                return json.dumps({"error": f"Container '{container_id}' not found."})
             try:
                 container.start()
-                return f"Container {container_id} started successfully"
+                return json.dumps({"success": True, "message": f"Container '{container_id}' started."})
             except Exception as e:
-                return f"Error starting container: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error starting container {container_id}: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def restart_container(container_id: str) -> str:
             """Restart a container"""
             container = self._find_container(container_id)
             if not container:
-                return f"Container {container_id} not found"
-
+                return json.dumps({"error": f"Container '{container_id}' not found."})
             try:
                 container.restart()
-                return f"Container {container_id} restarted successfully"
+                return json.dumps({"success": True, "message": f"Container '{container_id}' restarted."})
             except Exception as e:
-                return f"Error restarting container: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error restarting container {container_id}: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def delete_container(container_id: str) -> str:
-            """Delete a container (stops and removes it)"""
+            """Delete a container"""
             container = self._find_container(container_id)
             if not container:
-                return f"Container {container_id} not found"
-
+                return json.dumps({"error": f"Container '{container_id}' not found."})
             try:
-                container.stop()
-                container.remove()
-
-                # Remove from active containers
+                container.remove(force=True)
                 if container.id in self.active_containers:
                     del self.active_containers[container.id]
-
-                return f"Container {container_id} deleted successfully"
+                return json.dumps({"success": True, "message": f"Container '{container_id}' deleted."})
             except Exception as e:
-                return f"Error deleting container: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error deleting container {container_id}: {e}")
+                return json.dumps({"error": str(e)})
 
         @mcp_server.tool()
         async def get_container_logs(container_id: str, tail: int = 100) -> str:
             """Get logs from a container"""
             container = self._find_container(container_id)
             if not container:
-                return f"Container {container_id} not found"
-
+                return json.dumps({"error": f"Container '{container_id}' not found."})
             try:
-                logs = container.logs(tail=tail, timestamps=True)
-                return logs.decode("utf-8", errors="replace")
+                logs = container.logs(tail=tail, timestamps=True).decode("utf-8", errors="replace")
+                return json.dumps({"logs": logs})
             except Exception as e:
-                return f"Error getting container logs: {str(e)}"
+                if self.logger:
+                    self.logger.error(f"Error getting logs for {container_id}: {e}")
+                return json.dumps({"error": str(e)})
 
     def _find_container(self, container_id: str):
         """Find a container by ID or name"""
