@@ -81,6 +81,7 @@ services:
       SEARXNG_URL: "http://searxng:8080"
       REDIS_URL: "http://redis:6379"
       ENABLE_FIRECRAWL: "false"
+      ENABLE_DASHBOARD: "true"
       # --- Firecrawl [Local] ---
       # FIRECRAWL_URL: "http://firecrawl:3002"
       # ENABLE_FIRECRAWL: "true"

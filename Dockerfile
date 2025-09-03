@@ -3,7 +3,6 @@
 # Multi-architecture support - optimized for ARM64/Apple Silicon
 FROM python:3.11.13-bookworm
 
-LABEL version="1.0.0"
 LABEL description="A large developer focused MCP server for running with AI more easily."
 LABEL author='RA86-dev'
 
