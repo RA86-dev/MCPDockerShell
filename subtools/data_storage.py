@@ -3,7 +3,7 @@ from fastmcp import FastMCP
 import os
 class MarkdownTools:
     def __init__(self, markdown_path:str="/"):
-        self.markdown = markdown_path
+        self.base_path = markdown_path
         os.makedirs(exist_ok=True, name=f'{markdown_path}/artifacts')
         os.makedirs(exist_ok=True, name=f'{markdown_path}/markdown')
         os.makedirs(exist_ok=True, name=f'{markdown_path}/other_data')
@@ -21,8 +21,8 @@ class MarkdownTools:
             Recommended only for Artifacts or sections of code.
             """
             path = f"{self.artifacts}/{filename}"
-            fp = open(path,'w') 
-            fp.write(artifact)
+            with open(path, 'w') as fp:
+                fp.write(artifact)
             return f"success! The data has been written to {filename}."
         @mcp.tool()
         async def save_markdown(
@@ -35,8 +35,8 @@ class MarkdownTools:
             
             """
             path = f"{self.markdown}/{filename}"
-            fp = open(f'{filename}','w')
-            fp.write(f'{data}')
+            with open(path, 'w') as fp:
+                fp.write(data)
             return f"success! The data has been written to {filename}"
         @mcp.tool()
         async def list(
@@ -63,8 +63,8 @@ class MarkdownTools:
             
             """
             if artifact:
-                f = open(f'{self.artifacts}/{filename}','r')
-                return f.read()
+                with open(f'{self.artifacts}/{filename}', 'r') as f:
+                    return f.read()
             else:
-                f = open(f"{self.markdown}",'w')
-                return f.read()
+                with open(f'{self.markdown}/{filename}', 'r') as f:
+                    return f.read()
