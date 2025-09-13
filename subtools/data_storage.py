@@ -31,9 +31,11 @@ class MarkdownTools:
         ):
             """
             Save notes, or any markdown or HTML based languages for future use.
-
+            Only Markdown please!
             
             """
+            if data.split('.')[1] != ".md":
+                return "Only Markdown supported."
             path = f"{self.markdown}/{filename}"
             with open(path, 'w') as fp:
                 fp.write(data)

@@ -70,12 +70,14 @@ class ModuleFinder:
         if response.status_code != 200:
             return None
         return response.json()
+
     def _get_cve_data(self, cve_id: str):
-        base_url =f"https://cve.circl.lu/api/cve/{cve}"
-        d = requests.get(base_url)
-        return d.json()
-    
-        
+        base_url = f"https://cve.circl.lu/api/cve/{cve_id}"
+        response = requests.get(base_url)
+        if response.status_code != 200:
+            return None
+        return response.json()
+
     def add_tools(self, mcp_server):
         @mcp_server.tool()
         async def get_cve_data(cve_id: str):
@@ -90,6 +92,7 @@ class ModuleFinder:
                 This will search from services.nvd.nists.gov.
             """
             return self._get_cve_data(cve_id)
+
         @mcp_server.tool()
         async def find_module(
             lib_name: str,
@@ -126,4 +129,5 @@ class ModuleFinder:
                     "Unsupported package manager. Use 'npm', 'pypi', 'maven', 'packagist', or 'rubygems'."
                 )
 
-        return find_module
+        # Return both functions as a tuple or dict
+        return {"find_module": find_module, "get_cve_data": get_cve_data}

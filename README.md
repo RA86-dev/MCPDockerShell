@@ -5,6 +5,7 @@
 
 MCP Developer Server is a Python-based MCP (Model Context Protocol) server designed to supercharge your development workflow. It provides instant access to 700+ documentation sources and creates isolated Docker containers for safe code testing and experimentation.
 
+**Note**: It is recommended to not host a public instance as there is no authentication system yet.
 It is recommended to use a MCP server that reduces the amount of tokens used, as this uses a lot of tokens.
 
 ## 🚀 What Can It Do?

@@ -1,8 +1,5 @@
 """
 MCP Docker Developer Server (MCPDS)
-
-
-
 """
 import docker
 import tempfile
@@ -745,7 +742,5 @@ def serve_server():
     finally:
         if "server" in locals():
             server.cleanup()
-
-
 if __name__ == "__main__":
     sys.exit(serve_server())
