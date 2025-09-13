@@ -71,22 +71,14 @@ class ModuleFinder:
             return None
         return response.json()
     def _get_cve_data(self, cve_id: str):
-        """
-        Fetch CVE data from the NVD API.
-        """
-        data = {}
-        endpoint = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
-        response = requests.get(endpoint)
-        if response != 200:
-            return None
-        response_json = response.json()
-        vulnerability = response_json.get("vulnerabilities", [])[0]
-        return vulnerability if vulnerability else None
+        base_url =f"https://cve.circl.lu/api/cve/{cve}"
+        d = requests.get(base_url)
+        return d.json()
     
         
     def add_tools(self, mcp_server):
         @mcp_server.tool()
-        async def get_cve_data(cve_id: str) -> dict:
+        async def get_cve_data(cve_id: str):
             """
             Fetch CVE data from the NVD API.
 
