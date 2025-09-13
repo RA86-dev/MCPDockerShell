@@ -13,7 +13,6 @@ class MarkdownTools:
     def add_mcp_tools(self, mcp: FastMCP):
         @mcp.tool()
         async def save_artifact(
-            self,
             artifact: str,
             filename: str=f"{time.asctime()}"
         ):
@@ -27,7 +26,6 @@ class MarkdownTools:
             return f"success! The data has been written to {filename}."
         @mcp.tool()
         async def save_markdown(
-            self,
             data: str,
             filename: str
         ):
@@ -42,7 +40,6 @@ class MarkdownTools:
             return f"success! The data has been written to {filename}"
         @mcp.tool()
         async def list(
-            self
         ):
             """
             Shows the entire content of the Markdown and Artifacts directory from the save_markdown and save_artifact features.
@@ -57,7 +54,6 @@ class MarkdownTools:
             }
         @mcp.tool()
         async def read(
-            self, 
             filename: str,
             artifact: bool
         ):
