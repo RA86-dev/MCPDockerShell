@@ -41,6 +41,7 @@ try:
     from subtools.firecrawl_tools import FirecrawlTools
     from subtools.searxng_tools import SearXNGTools
     from subtools.module_finder import ModuleFinder
+    from subtools.llms_support import LLMSText
     from subtools.prompts import PromptManager
 
 
@@ -168,7 +169,9 @@ class MCPDockerServer:
             max_workers=min(MAX_WORKERS, (os.cpu_count() or 1) + 4),
             thread_name_prefix="MCPDocker",
         )
+        self.llms_support = LLMSText(
 
+        )
         # Define comprehensive set of allowed development images
         self.allowed_images = {
             # Base OS images
@@ -372,7 +375,8 @@ class MCPDockerServer:
             if not HAS_ALL_SUBTOOLS:
                 self.logger.error("Cannot register tools - subtools not available")
                 return
-
+            if self.llms_support:
+                self.llms_support.add_tools(self.mcp)
             # Register core Docker tools
             if self.docker_tools and self._get_config("docker_management", True):
                 self.docker_tools.register_tools(self.mcp)
