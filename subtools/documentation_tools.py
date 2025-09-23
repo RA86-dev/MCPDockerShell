@@ -90,48 +90,7 @@ class DocumentationTools:
                 response = requests.get(search_url, params=params, timeout=30)
 
                 if response.status_code == 200:
-                    try:
-                        results = response.json()
-                        if isinstance(results, list) and results:
-                            formatted_results = []
-                            for result in results[:max_results]:
-                                formatted_result = {
-                                    "title": result.get("title", ""),
-                                    "path": result.get("path", ""),
-                                    "type": result.get("type", ""),
-                                    "url": f"{self.devdocs_url}/{result.get('path', '')}",
-                                    "summary": (
-                                        result.get("summary", "")[:200] + "..."
-                                        if len(result.get("summary", "")) > 200
-                                        else result.get("summary", "")
-                                    ),
-                                }
-                                formatted_results.append(formatted_result)
-
-                            return json.dumps(
-                                {
-                                    "query": query,
-                                    "language": language,
-                                    "results": formatted_results,
-                                    "total_found": len(formatted_results),
-                                },
-                                indent=2,
-                            )
-                        else:
-                            return json.dumps(
-                                {
-                                    "query": query,
-                                    "language": language,
-                                    "results": [],
-                                    "message": "No results found",
-                                },
-                                indent=2,
-                            )
-                    except json.JSONDecodeError:
-                        # If JSON parsing fails, try to extract useful info from HTML
-                        return f"DevDocs search completed but returned non-JSON response. Status: {response.status_code}"
-                else:
-                    return f"DevDocs search failed with status {response.status_code}: {response.text[:500]}"
+                    return response.text
 
             except requests.exceptions.ConnectionError:
                 return f"Cannot connect to DevDocs at {self.devdocs_url}. Is the service running?"
@@ -155,17 +114,8 @@ class DocumentationTools:
 
                 if response.status_code == 200:
                     try:
-                        content_data = response.json()
-                        return json.dumps(
-                            {
-                                "path": path,
-                                "language": language,
-                                "content": content_data.get("content", ""),
-                                "title": content_data.get("title", ""),
-                                "url": content_url,
-                            },
-                            indent=2,
-                        )
+                        content_data = response.text
+                        return content_data
                     except json.JSONDecodeError:
                         # Return raw text if JSON parsing fails
                         return response.text[:5000] + (
